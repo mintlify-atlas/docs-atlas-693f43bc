@@ -1,0 +1,211 @@
+---
+title: "Deploy Scada-LTS with Docker Compose, MySQL 8, MQTT"
+description: "Run Scada-LTS using Docker Compose with MySQL 8 and an optional MQTT broker. Configure environment variables, volumes, and networking for production."
+---
+
+The recommended way to run Scada-LTS is with Docker Compose. The official compose file bundles three services — a MySQL 8 database, the Scada-LTS web application running on Tomcat 9, and a HiveMQ MQTT broker — so you can stand up a fully functional SCADA environment with a single command.
+
+## Prerequisites
+
+Before you begin, make sure the following are installed on your host:
+
+- **Docker Engine** 20.10 or later
+- **Docker Compose v2** (included with Docker Desktop; on Linux install the `docker-compose-plugin` package)
+
+Verify your versions:
+
+```bash
+docker --version
+docker compose version
+```
+
+## Docker Compose file
+
+The production `docker-compose.yml` defines all three services. Save it to a working directory and use it as the starting point for your deployment:
+
+```yaml
+# Docker compose file to manage your deployed images.
+# Use MySQL server 8 and latest Scada-LTS local build.
+# Using attached webapps folder as developer you will be able to modify the static content from host os.
+# Attach shell to stop the tomcat instance and then you will be able to run in JPDA mode.
+version: '3'
+services: 
+    database:
+        container_name: mysql
+        image: mysql/mysql-server:8.0.32
+        ports:
+            - "3306:3306"
+        environment: 
+            - MYSQL_ROOT_PASSWORD=root
+            - MYSQL_USER=root
+            - MYSQL_PASSWORD=root
+            - MYSQL_DATABASE=scadalts
+        expose: ["3306"]
+        volumes:
+            - ./db_data:/var/lib/mysql:rw
+            - ./db_conf:/etc/mysql:ro
+        command: --log_bin_trust_function_creators=1
+    scadalts:
+        image: scadalts/scadalts:latest
+        environment:
+            - CATALINA_OPTS=-Xmx2G -Xms2G
+        ports: 
+            - "8080:8080"
+        depends_on: 
+            - database
+        expose: ["8080", "8000"]
+        volumes:
+            - ./tomcat_log:/usr/local/tomcat/logs:rw
+        links:
+            - database:database
+        command:
+            - /usr/bin/wait-for-it
+            - --host=database
+            - --port=3306
+            - --timeout=30
+            - --strict
+            - --
+            - /usr/local/tomcat/bin/catalina.sh
+            - run
+    mqtt:
+        image: hivemq/hivemq4:latest
+        ports:
+            - "8081:8080"
+            - "1883:1883"
+        expose: [ "8081", "1883" ]
+```
+
+## Service breakdown
+
+### `database` — MySQL 8.0.32
+
+The `database` service runs `mysql/mysql-server:8.0.32` and is the only persistent store for all Scada-LTS configuration, data sources, data points, and historical values.
+
+- **Port** `3306` is mapped to the host. In production, restrict this port at the firewall level — it should never be reachable from the internet.
+- **Volumes**: `./db_data` maps to `/var/lib/mysql` (read-write) for persistent data storage, and `./db_conf` maps to `/etc/mysql` (read-only) so you can supply a custom `my.cnf`.
+- **Command flag** `--log_bin_trust_function_creators=1` is required by Scada-LTS's stored functions.
+
+### `scadalts` — Tomcat 9 / Scada-LTS
+
+The `scadalts` service pulls the official `scadalts/scadalts:latest` image, which packages the Scada-LTS WAR file deployed into Apache Tomcat 9.0.86 on JRE 11.
+
+- **Port** `8080` is the HTTP interface for the Scada-LTS web UI, reachable at `http://<host>:8080/Scada-LTS`.
+- **Port** `8000` is exposed internally for JPDA remote debugging (not published to the host in the production compose file).
+- **Volume** `./tomcat_log` maps to `/usr/local/tomcat/logs` so Tomcat and application logs persist on the host.
+- **Memory** is controlled by `CATALINA_OPTS=-Xmx2G -Xms2G`, allocating 2 GB heap.
+
+<Tip>
+  The `scadalts` service uses the `wait-for-it` script to poll MySQL on port 3306 before starting Tomcat. This prevents startup failures caused by the application connecting before the database is ready.
+</Tip>
+
+### `mqtt` — HiveMQ 4
+
+The `mqtt` service runs `hivemq/hivemq4:latest` and provides an MQTT broker for integrating with field devices that publish over MQTT.
+
+- **Port** `8081` (mapped from container port `8080`) serves the HiveMQ web control center.
+- **Port** `1883` is the standard MQTT protocol port.
+
+## Environment variables
+
+| Variable | Service | Default | Description |
+|---|---|---|---|
+| `MYSQL_ROOT_PASSWORD` | `database` | `root` | Root password for the MySQL instance. **Change before deploying to production.** |
+| `MYSQL_USER` | `database` | `root` | Application database user that Scada-LTS connects with. |
+| `MYSQL_PASSWORD` | `database` | `root` | Password for `MYSQL_USER`. Must match the credentials in `context.xml`. |
+| `MYSQL_DATABASE` | `database` | `scadalts` | Name of the database schema to create on first boot. |
+| `CATALINA_OPTS` | `scadalts` | `-Xmx2G -Xms2G` | JVM options passed to Tomcat. Adjust heap sizes to match your host memory. |
+
+<Warning>
+  The default credentials (`root`/`root`) are placeholders only. Change all passwords before running any internet-facing or production deployment.
+</Warning>
+
+## Volume mounts
+
+| Volume (host path) | Container path | Mode | Purpose |
+|---|---|---|---|
+| `./db_data` | `/var/lib/mysql` | `rw` | Persistent MySQL data files. Back this directory up regularly. |
+| `./db_conf` | `/etc/mysql` | `ro` | Optional MySQL configuration overrides (`my.cnf`). |
+| `./tomcat_log` | `/usr/local/tomcat/logs` | `rw` | Tomcat access logs, catalina.out, and Scada-LTS application logs. |
+
+## Starting and stopping
+
+<Steps>
+  <Step title="Pull images and start all services">
+    ```bash
+    docker compose up -d
+    ```
+    Docker will pull any missing images, create the named volumes and directories, and start all three containers. The first boot may take 30–60 seconds while MySQL initializes the schema.
+  </Step>
+  <Step title="Open the Scada-LTS UI">
+    Navigate to `http://localhost:8080/Scada-LTS` in your browser. The default admin credentials are `admin` / `admin`.
+  </Step>
+  <Step title="Stop all services">
+    ```bash
+    docker compose down
+    ```
+    This stops and removes the containers but leaves the `db_data`, `db_conf`, and `tomcat_log` directories intact. Add `-v` only if you want to delete the data volumes too.
+  </Step>
+</Steps>
+
+## Viewing logs
+
+<Tabs>
+  <Tab title="Scada-LTS (Tomcat)">
+    ```bash
+    docker compose logs -f scadalts
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```bash
+    docker compose logs -f database
+    ```
+  </Tab>
+  <Tab title="MQTT broker">
+    ```bash
+    docker compose logs -f mqtt
+    ```
+  </Tab>
+  <Tab title="All services">
+    ```bash
+    docker compose logs -f
+    ```
+  </Tab>
+</Tabs>
+
+Tomcat logs are also written to `./tomcat_log/` on the host, so you can inspect them with standard tools without entering the container.
+
+## Development compose file
+
+`docker-compose-dev.yml` extends the production setup with additional services and JPDA debug support:
+
+```yaml
+scadalts:
+  environment:
+    - CATALINA_OPTS=-Xmx2G -Xms2G
+    - JPDA_ADDRESS=0.0.0.0:8000
+    - JPDA_TRANSPORT=dt_socket
+  ports:
+    - "8080:8080"
+    - "8000:8000"   # JPDA remote debugger
+```
+
+It also starts four extra services not present in the production file:
+
+| Service | Image | Purpose |
+|---|---|---|
+| `amqp` | `rabbitmq:management` | RabbitMQ AMQP broker (ports 5672, 15672) |
+| `smtp4dev` | `rnwood/smtp4dev` | Fake SMTP server for testing email alerts (ports 25, 80, 143) |
+| `opcua` | `mcr.microsoft.com/iotedge/opc-plc` | Sample OPC-UA server (ports 4840, 8080) |
+| `mqtt` | `hivemq/hivemq4` | HiveMQ with explicit admin credentials set |
+
+To start the development stack:
+
+```bash
+docker compose -f docker-compose-dev.yml up -d
+```
+
+Tomcat starts in JPDA mode (`catalina.sh jpda run`) so you can attach a remote debugger on port `8000` from IntelliJ IDEA or Eclipse.
+
+<Note>
+  The `wait-for-it` utility is installed in the Scada-LTS image and is called as the container's entrypoint command. It probes MySQL on port 3306 with a 30-second timeout and exits non-zero if the database is not reachable, preventing Tomcat from starting against an unavailable database.
+</Note>

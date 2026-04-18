@@ -1,0 +1,169 @@
+---
+title: "REST API: Graphical Views — List, Fetch, and Create"
+description: "Manage Scada-LTS graphical views via REST API. List existing views, retrieve a view by XID, and create new HMI screens programmatically."
+---
+
+The Views API provides access to the graphical view objects in Scada-LTS. Views are browser-based HMI screens that display data point values, status indicators, and controls overlaid on a background image. Using this API you can enumerate all views available to the authenticated user, fetch the details of a specific view by its XID, and create new views with a background image and display configuration. This is useful for automated provisioning, backup, and integration with external tools.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require HTTP Basic authentication.
+
+<Note>
+  The primary authentication method is session cookies — see [Authentication](/api/authentication) for the full flow. The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing.
+</Note>
+
+---
+
+## GET /api/view/getAll
+
+List all views available in the system. Returns a lightweight identifier array — name, XID, and ID — that you can use to discover what views exist before fetching their full details.
+
+### Response
+
+Returns an array of `ScadaObjectIdentifier` objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier for the view.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) for the view.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the view.
+</ResponseField>
+
+**HTTP 200** — Returns an array of view identifier objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/view/getAll" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 1,
+    "xid": "VW_OVERVIEW",
+    "name": "Plant Overview"
+  },
+  {
+    "id": 2,
+    "xid": "VW_BOILER",
+    "name": "Boiler Room"
+  }
+]
+```
+
+---
+
+## GET /api/view/getByXid/{xid}
+
+Retrieve a view by its export identifier (XID). This endpoint returns an array containing the matching view's ID and XID. Use the numeric ID returned here if you need to reference the view in further API calls.
+
+<ParamField path="xid" type="string" required>
+  The export identifier (XID) of the view to retrieve, for example `VW_OVERVIEW`.
+</ParamField>
+
+### Response
+
+Returns an array containing the matching view object.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier for the view.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) of the view.
+</ResponseField>
+
+**HTTP 200** — Returns an array with the matching view object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/view/getByXid/VW_OVERVIEW" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 1,
+    "xid": "VW_OVERVIEW"
+  }
+]
+```
+
+---
+
+## POST /api/view/createView
+
+Create a new graphical view. The request body defines the view's name, XID, background image path, and display size. On success the API returns the created view object with additional server-assigned fields such as the owning user ID and the resolved filename.
+
+<ParamField body="name" type="string" required>
+  Display name for the new view. Shown in the navigation sidebar and view selector.
+</ParamField>
+
+<ParamField body="xid" type="string" required>
+  Export identifier (XID) to assign to the new view. Must be unique across all views.
+</ParamField>
+
+<ParamField body="imagePath" type="string">
+  Server-relative path to the background image file for the view, for example `/images/plant_floor.png`.
+</ParamField>
+
+<ParamField body="size" type="number">
+  Display size or resolution code for the view canvas.
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  Display name of the created view.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) of the created view.
+</ResponseField>
+
+<ResponseField name="userId" type="string">
+  ID of the user who created the view (the authenticated user making this request).
+</ResponseField>
+
+<ResponseField name="resolution" type="number">
+  Canvas resolution value assigned to the view.
+</ResponseField>
+
+<ResponseField name="filename" type="string">
+  Resolved filename of the background image on the server.
+</ResponseField>
+
+**HTTP 200** — Returns the created view object with server-assigned fields.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/view/createView" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Pump Station",
+    "xid": "VW_PUMP_01",
+    "imagePath": "/images/pump_station.png",
+    "size": 1
+  }'
+```
+
+```json
+{
+  "name": "Pump Station",
+  "xid": "VW_PUMP_01",
+  "userId": "1",
+  "resolution": 1,
+  "filename": "pump_station.png"
+}
+```
+
+<Tip>
+  Background images must be uploaded to the Scada-LTS server before creating a view that references them. Use the Resources API or the Scada-LTS administration UI to upload image files.
+</Tip>

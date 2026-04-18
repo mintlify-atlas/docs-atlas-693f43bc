@@ -1,97 +1,66 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Scada-LTS: Open Source SCADA for Industrial Monitoring"
+description: "Scada-LTS is a web-based, multi-platform SCADA system for industrial monitoring and control. Connect data sources, visualize processes, and manage alarms."
 ---
 
-## Setting up
+Scada-LTS is an open-source Supervisory Control and Data Acquisition (SCADA) system built for industrial environments. It connects to industrial protocols like Modbus, BACnet, and SNMP, lets you build real-time graphical views of your processes, and provides alarm management with email and SMS notifications — all through a web browser.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Run Scada-LTS with Docker and connect your first data source in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="server" href="/installation">
+    Full installation guide including Docker Compose, build from source, and system requirements.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Data Sources" icon="plug" href="/concepts/data-sources">
+    Learn how Scada-LTS connects to Modbus, BACnet, SNMP, SQL, HTTP, MQTT, and more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the REST API to integrate Scada-LTS with your own applications.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do with Scada-LTS
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Graphical Views" icon="display" href="/concepts/graphical-views">
+    Build drag-and-drop SCADA screens that update in real time.
+  </Card>
+  <Card title="Alarms & Events" icon="bell" href="/concepts/alarms-events">
+    Define alarm thresholds and route notifications via email or SMS.
+  </Card>
+  <Card title="Watch Lists" icon="list-check" href="/guide/watchlist">
+    Monitor groups of data points side by side on a single screen.
+  </Card>
+  <Card title="Reports" icon="chart-line" href="/guide/reports">
+    Generate historical trend reports and export data for analysis.
+  </Card>
+  <Card title="Point Hierarchy" icon="sitemap" href="/admin/point-hierarchy">
+    Organize thousands of data points into a browsable folder structure.
+  </Card>
+  <Card title="Import & Export" icon="arrows-rotate" href="/admin/import-export">
+    Backup and transfer your full system configuration as XML.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Get started in three steps
 
-## Need inspiration?
+<Steps>
+  <Step title="Deploy with Docker">
+    Pull the official image and start Scada-LTS with a single Docker Compose command. MySQL is included in the compose file.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+  <Step title="Log in and add a data source">
+    Open your browser at `http://localhost:8080/Scada-LTS` and log in with the default credentials. Navigate to **Data Sources** and add your first Modbus, BACnet, or virtual data source.
+  </Step>
+  <Step title="Build a graphical view">
+    Go to **Graphical Views**, create a new view, and drag data point components onto your process background image to build a live SCADA display.
+  </Step>
+</Steps>
+
+<Note>
+  Scada-LTS is released under the GPL-2.0 license. Source code and releases are available on [GitHub](https://github.com/SCADA-LTS/Scada-LTS).
+</Note>

@@ -1,0 +1,85 @@
+---
+title: "Monitor Data Points in Real Time Using Watch Lists"
+description: "Watch lists in Scada-LTS let you monitor multiple data points on one screen. View real-time values, trends, and alarm states for any set of points."
+---
+
+A watch list is a saved, named collection of data points that you want to observe together. Rather than navigating between individual point detail pages, a watch list brings all the readings you care about onto a single screen — updated in real time via WebSocket — alongside an integrated chart so you can spot trends at a glance.
+
+## What is a watch list?
+
+Internally a watch list (`WatchList.java`) stores a `name`, a globally unique `xid` (prefixed `WL_`), an owning `userId`, an ordered list of `DataPointVO` references, and a `watchListUsers` list that grants other accounts read or write access. Each user can own and switch between multiple watch lists; the active one is selected from a drop-down in the page header.
+
+The view is split into two resizable panels: the **Point Watcher** table on the left and a **Point Chart** on the right. You can toggle between a horizontal split and a vertical split, and optionally expand the chart panel to 65% of the width. The layout preference for each watch list is persisted in `localStorage`.
+
+## The Point Watcher table
+
+Each row in the Point Watcher table represents one data point and shows the following information:
+
+| Column | Description |
+|--------|-------------|
+| Data source name | The source the point belongs to (can be hidden with the toggle button) |
+| Point name | The configured name of the data point |
+| Description | Optional description attached to the point |
+| Current value | Live reading, rendered through the point's text renderer |
+| Timestamp | Date and time of the last received value |
+| Alarm badge | Count of active (unacknowledged) events, colour-coded by severity (blue → yellow → orange → red) |
+
+Points that are disabled, or whose data source is disabled, are shown in grey with a status label instead of a value.
+
+## Creating a watch list
+
+<Steps>
+  <Step title="Open the Watch List page">
+    Navigate to **Watch List** in the main menu. The page header contains a **+** button to create a new list.
+  </Step>
+  <Step title="Fill in the name and XID">
+    Click the **+** button to open the creation dialog. Enter a human-readable **Name** (up to 50 characters) and verify the auto-generated **XID** (e.g. `WL_abc123`). The XID is validated for uniqueness against the server before the form can be submitted.
+  </Step>
+  <Step title="Add data points">
+    Use the search autocomplete to find points by name, or browse the **data point hierarchy** tree. Each folder in the tree can be expanded to reveal the points it contains. Check the box next to any point to add it to the list.
+  </Step>
+  <Step title="Choose a layout">
+    Select **Horizontal** (Point Watcher stacked above the chart) or **Vertical** (side-by-side). In vertical mode you can also tick **Bigger chart** to allocate 65% of the width to the chart panel.
+  </Step>
+  <Step title="Save the watch list">
+    Click **Create**. You are redirected to the new watch list view immediately, and the list appears in the drop-down selector for future navigation.
+  </Step>
+</Steps>
+
+## Editing a watch list
+
+Users who own a watch list, or who have been granted write access (`userRights >= 2`), see a pencil (edit) button in the toolbar. Clicking it reopens the configuration dialog where you can rename the list, change the layout, or add and remove data points. An unsaved-changes badge appears on the button whenever the configuration differs from the last saved state. Click **Update** to persist.
+
+Only the owner — or an administrator — sees the delete (minus) button. Deleting a watch list removes it immediately and returns the view to the empty state.
+
+## Sharing watch lists
+
+Access to a watch list is controlled through the `watchListUsers` list stored on the `WatchList` object. Each entry pairs a user ID with an access type:
+
+- **None (0)** — the user cannot see the list
+- **Read (1)** — the user can view the list but not modify it or delete points
+- **Set (2)** — the user can set point values and reorder the list
+- **Owner (3)** — full access, including deletion
+
+Sharing is configured through the XID-based import/export system. A watch list can be referenced by its `xid` in JSON imports, allowing administrators to distribute pre-built lists across installations.
+
+## Multiple watch lists per user
+
+There is no limit to the number of watch lists a user can create. All watch lists owned by the logged-in user, plus any shared with them, appear in the selector drop-down. Switching between them is instant — the URL updates to `/watch-list/{id}` and the Point Watcher and chart reload for the selected list.
+
+<Note>
+  The order of points within the Point Watcher table can be changed by dragging the handle icon on the left of each row. The new order is saved automatically when the drag ends.
+</Note>
+
+## Setting point values
+
+For settable data points, users with write access (`permissions === 2`) see a small edit icon on the left of the row. Clicking it opens a dialog to submit a new value directly from the watch list — without leaving the page.
+
+<CardGroup cols={2}>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Learn how to configure data points, text renderers, and logging settings.
+  </Card>
+  <Card title="Reports" icon="chart-bar" href="/guide/reports">
+    Generate historical reports from the data points in your watch lists.
+  </Card>
+</CardGroup>

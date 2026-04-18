@@ -1,0 +1,768 @@
+---
+title: "REST API: System Settings — Read and Update Config"
+description: "Read and update Scada-LTS system-wide settings via REST API. Access database, email, HTTP, and purge configuration programmatically."
+---
+
+The System Settings API provides programmatic access to the global configuration of your Scada-LTS instance. You can read and update email delivery settings, HTTP proxy configuration, miscellaneous purge and performance settings, system information, audit and system event alarm levels, and database configuration. Several read-only endpoints expose runtime diagnostics such as database size, schema version, and startup time.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require HTTP Basic authentication.
+
+<Note>
+  Only administrator accounts have permission to read or modify system settings. Requests from non-administrator users will be rejected.
+</Note>
+
+---
+
+## GET /api/systemSettings/getSettings
+
+Retrieve a full snapshot of all system settings in a single call. The response is a composite object containing sub-objects for database type, email, HTTP, miscellaneous settings, system information, and Scada-LTS internal configuration.
+
+### Response
+
+<ResponseField name="databaseType" type="object">
+  Information about the active database backend.
+</ResponseField>
+
+<ResponseField name="systemEventTypes" type="array">
+  List of system event type configurations and their current alarm levels.
+</ResponseField>
+
+<ResponseField name="auditEventTypes" type="array">
+  List of audit event type configurations and their current alarm levels.
+</ResponseField>
+
+<ResponseField name="emailSettings" type="object">
+  Current email (SMTP) server configuration. See `GET /api/systemSettings/getEmail` for the full schema.
+</ResponseField>
+
+<ResponseField name="scadaConfig" type="object">
+  Internal Scada-LTS runtime configuration flags. See `GET /api/systemSettings/getScadaConfig` for the full schema.
+</ResponseField>
+
+<ResponseField name="systemInfoSettings" type="object">
+  Instance description, language, and update notification level.
+</ResponseField>
+
+<ResponseField name="httpSettings" type="object">
+  HTTP proxy configuration. See `GET /api/systemSettings/getHttp` for the full schema.
+</ResponseField>
+
+<ResponseField name="miscSettings" type="object">
+  Purge periods, UI performance tuning, and logging flags. See `GET /api/systemSettings/getMisc` for the full schema.
+</ResponseField>
+
+**HTTP 200** — Returns a composite settings object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getSettings" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+---
+
+## GET /api/systemSettings/getEmail
+
+Return the current SMTP email server configuration.
+
+### Response
+
+<ResponseField name="auth" type="boolean">
+  Whether SMTP authentication is enabled.
+</ResponseField>
+
+<ResponseField name="tls" type="boolean">
+  Whether TLS is enabled for the SMTP connection.
+</ResponseField>
+
+<ResponseField name="contentType" type="number">
+  Email content type: `1` = plain text, `2` = HTML.
+</ResponseField>
+
+<ResponseField name="port" type="number">
+  SMTP server port (commonly `25`, `465`, or `587`).
+</ResponseField>
+
+<ResponseField name="from" type="string">
+  Sender email address used for outgoing messages.
+</ResponseField>
+
+<ResponseField name="host" type="string">
+  Hostname or IP address of the SMTP server.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name used in the `From` header of sent emails.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  SMTP authentication username.
+</ResponseField>
+
+<ResponseField name="password" type="string">
+  SMTP authentication password.
+</ResponseField>
+
+**HTTP 200** — Returns the email settings object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getEmail" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "auth": true,
+  "tls": true,
+  "contentType": 2,
+  "port": 587,
+  "from": "scada@example.com",
+  "host": "smtp.example.com",
+  "name": "Scada-LTS Alerts",
+  "username": "scada@example.com",
+  "password": "smtp-secret"
+}
+```
+
+---
+
+## POST /api/systemSettings/saveEmail
+
+Save updated SMTP email server settings. Supply a complete `SettingsEmailJSON` object; all fields are replaced.
+
+### Request body
+
+<ParamField body="auth" type="boolean">
+  Enable SMTP authentication.
+</ParamField>
+
+<ParamField body="tls" type="boolean">
+  Enable TLS for the SMTP connection.
+</ParamField>
+
+<ParamField body="contentType" type="number">
+  Email body format: `1` = plain text, `2` = HTML.
+</ParamField>
+
+<ParamField body="port" type="number">
+  SMTP server port.
+</ParamField>
+
+<ParamField body="from" type="string">
+  Sender email address.
+</ParamField>
+
+<ParamField body="host" type="string">
+  SMTP server hostname or IP.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Sender display name.
+</ParamField>
+
+<ParamField body="username" type="string">
+  SMTP authentication username.
+</ParamField>
+
+<ParamField body="password" type="string">
+  SMTP authentication password.
+</ParamField>
+
+**HTTP 200** — Settings saved. No response body.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/saveEmail" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "auth": true,
+    "tls": true,
+    "contentType": 2,
+    "port": 587,
+    "from": "scada@example.com",
+    "host": "smtp.example.com",
+    "name": "Scada-LTS Alerts",
+    "username": "scada@example.com",
+    "password": "smtp-secret"
+  }'
+```
+
+---
+
+## GET /api/systemSettings/sendTestEmail
+
+Send a test email using the currently saved SMTP configuration. Useful for verifying that email delivery is working after a configuration change.
+
+**HTTP 200** — The test email was dispatched. Check the recipient inbox for delivery.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/sendTestEmail" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+---
+
+## GET /api/systemSettings/getHttp
+
+Return the current HTTP proxy configuration used by Scada-LTS for outbound HTTP connections.
+
+### Response
+
+<ResponseField name="useProxy" type="boolean">
+  Whether outbound HTTP requests are routed through a proxy.
+</ResponseField>
+
+<ResponseField name="port" type="number">
+  Proxy server port.
+</ResponseField>
+
+<ResponseField name="host" type="string">
+  Hostname or IP address of the proxy server.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Proxy authentication username.
+</ResponseField>
+
+<ResponseField name="password" type="string">
+  Proxy authentication password.
+</ResponseField>
+
+**HTTP 200** — Returns the HTTP proxy configuration object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getHttp" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "useProxy": false,
+  "port": 8080,
+  "host": "",
+  "username": "",
+  "password": ""
+}
+```
+
+---
+
+## POST /api/systemSettings/saveHttp
+
+Save updated HTTP proxy settings.
+
+### Request body
+
+<ParamField body="useProxy" type="boolean">
+  Enable or disable proxy routing.
+</ParamField>
+
+<ParamField body="port" type="number">
+  Proxy server port.
+</ParamField>
+
+<ParamField body="host" type="string">
+  Proxy server hostname or IP.
+</ParamField>
+
+<ParamField body="username" type="string">
+  Proxy authentication username.
+</ParamField>
+
+<ParamField body="password" type="string">
+  Proxy authentication password.
+</ParamField>
+
+**HTTP 200** — Settings saved. No response body.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/saveHttp" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "useProxy": true,
+    "port": 3128,
+    "host": "proxy.internal.example.com",
+    "username": "proxyuser",
+    "password": "proxypass"
+  }'
+```
+
+---
+
+## GET /api/systemSettings/getMisc
+
+Return the miscellaneous settings that control event and report purge schedules, UI performance, and future date limits.
+
+### Response
+
+<ResponseField name="groveLogging" type="boolean">
+  Whether Grove-level logging is enabled.
+</ResponseField>
+
+<ResponseField name="eventPurgePeriodType" type="number">
+  Unit for the event purge period: `1` = days, `2` = weeks, `3` = months, `4` = years.
+</ResponseField>
+
+<ResponseField name="eventPurgePeriods" type="number">
+  Number of units to retain event records before automatic purge.
+</ResponseField>
+
+<ResponseField name="reportPurgePeriodType" type="number">
+  Unit for the report purge period.
+</ResponseField>
+
+<ResponseField name="reportPurgePeriods" type="number">
+  Number of units to retain report records before automatic purge.
+</ResponseField>
+
+<ResponseField name="uiPerformance" type="number">
+  UI polling interval in milliseconds. Lower values increase UI responsiveness at the cost of server load.
+</ResponseField>
+
+<ResponseField name="futureDateLimitPeriodType" type="number">
+  Unit for the future date limit.
+</ResponseField>
+
+<ResponseField name="futureDateLimitPeriods" type="number">
+  How far into the future (in the selected unit) a data point timestamp is allowed to be before being rejected.
+</ResponseField>
+
+**HTTP 200** — Returns the miscellaneous settings object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getMisc" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "groveLogging": false,
+  "eventPurgePeriodType": 3,
+  "eventPurgePeriods": 1,
+  "reportPurgePeriodType": 2,
+  "reportPurgePeriods": 6,
+  "uiPerformance": 2000,
+  "futureDateLimitPeriodType": 1,
+  "futureDateLimitPeriods": 24
+}
+```
+
+---
+
+## POST /api/systemSettings/saveMisc
+
+Save updated miscellaneous settings. The request body follows the same `SettingsMiscJSON` schema returned by `getMisc`.
+
+**HTTP 200** — Settings saved. No response body.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/saveMisc" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "groveLogging": false,
+    "eventPurgePeriodType": 3,
+    "eventPurgePeriods": 3,
+    "reportPurgePeriodType": 2,
+    "reportPurgePeriods": 12,
+    "uiPerformance": 1000,
+    "futureDateLimitPeriodType": 1,
+    "futureDateLimitPeriods": 24
+  }'
+```
+
+---
+
+## GET /api/systemSettings/getSystemInfo
+
+Return instance-level information including the human-readable description, UI language, and the update notification level.
+
+### Response
+
+<ResponseField name="newVersionNotficationLevel" type="string">
+  Controls when users are notified of new Scada-LTS releases. Accepted values are `NONE`, `PATCH`, `MINOR`, or `MAJOR`.
+</ResponseField>
+
+<ResponseField name="instanceDescription" type="string">
+  Free-text description of this Scada-LTS instance, shown in the UI header.
+</ResponseField>
+
+<ResponseField name="language" type="string">
+  Language code for the UI, for example `en` or `pl`.
+</ResponseField>
+
+**HTTP 200** — Returns the system info object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getSystemInfo" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "newVersionNotficationLevel": "MINOR",
+  "instanceDescription": "Production SCADA – Building A",
+  "language": "en"
+}
+```
+
+---
+
+## POST /api/systemSettings/saveSystemInfo
+
+Save updated system info settings.
+
+### Request body
+
+<ParamField body="newVersionNotficationLevel" type="string">
+  Update notification level: `NONE`, `PATCH`, `MINOR`, or `MAJOR`.
+</ParamField>
+
+<ParamField body="instanceDescription" type="string">
+  Human-readable description of this instance.
+</ParamField>
+
+<ParamField body="language" type="string">
+  UI language code, for example `en` or `pl`.
+</ParamField>
+
+**HTTP 200** — Settings saved. No response body.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/saveSystemInfo" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "newVersionNotficationLevel": "MINOR",
+    "instanceDescription": "Production SCADA – Building A",
+    "language": "en"
+  }'
+```
+
+---
+
+## GET /api/systemSettings/getAuditEventAlarmLevels
+
+Return the alarm level assigned to each audit event type. Audit events are generated when users make configuration changes in the system.
+
+### Response
+
+Returns an array of `SettingsDualJSON` objects.
+
+<ResponseField name="i1" type="number">
+  Audit event type identifier.
+</ResponseField>
+
+<ResponseField name="i2" type="number">
+  Alarm level assigned to this audit event type.
+</ResponseField>
+
+<ResponseField name="translation" type="string">
+  Localized display name for this audit event type.
+</ResponseField>
+
+**HTTP 200** — Returns an array of audit event alarm level objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getAuditEventAlarmLevels" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  { "i1": 1, "i2": 0, "translation": "Data source added" },
+  { "i1": 2, "i2": 1, "translation": "Data source modified" }
+]
+```
+
+---
+
+## GET /api/systemSettings/getSystemEventAlarmLevels
+
+Return the alarm level assigned to each system event type. System events are generated by the Scada-LTS runtime for conditions such as data source failures or license expiry.
+
+### Response
+
+Returns an array of `SettingsDualJSON` objects with the same structure as `getAuditEventAlarmLevels`.
+
+<ResponseField name="i1" type="number">
+  System event type identifier.
+</ResponseField>
+
+<ResponseField name="i2" type="number">
+  Alarm level assigned to this system event type.
+</ResponseField>
+
+<ResponseField name="translation" type="string">
+  Localized display name for this system event type.
+</ResponseField>
+
+**HTTP 200** — Returns an array of system event alarm level objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getSystemEventAlarmLevels" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+---
+
+## GET /api/systemSettings/getDatabaseType
+
+Return the name of the active database backend configured for this instance.
+
+### Response
+
+<ResponseField name="databaseType" type="string">
+  Name of the active database driver, for example `derby` or `mysql`.
+</ResponseField>
+
+**HTTP 200** — Returns the database type object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getDatabaseType" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{ "databaseType": "mysql" }
+```
+
+---
+
+## GET /api/systemSettings/getDatabaseSize
+
+Return storage usage information for the database, including total size, file data size, and a breakdown of the largest data point storage consumers.
+
+### Response
+
+<ResponseField name="totalSize" type="string">
+  Human-readable string representing the total database size (for example, `"142 MB"`).
+</ResponseField>
+
+<ResponseField name="filedataSize" type="number">
+  Size of file data stored in the database, in bytes.
+</ResponseField>
+
+<ResponseField name="topPoints" type="array">
+  Ordered list of data points with the highest record counts.
+  <Expandable title="properties">
+    <ResponseField name="pointId" type="number">
+      Internal ID of the data point.
+    </ResponseField>
+    <ResponseField name="pointName" type="string">
+      Display name of the data point.
+    </ResponseField>
+    <ResponseField name="count" type="number">
+      Number of value records stored for this point.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**HTTP 200** — Returns the database size summary.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getDatabaseSize" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "totalSize": "142 MB",
+  "filedataSize": 0,
+  "topPoints": [
+    { "pointId": 10, "pointName": "Tank Level", "count": 8640000 },
+    { "pointId": 12, "pointName": "Pump Speed",  "count": 4320000 }
+  ]
+}
+```
+
+---
+
+## GET /api/systemSettings/purgeData
+
+Trigger an immediate purge of historical data according to the purge settings configured under `saveMisc`. The purge runs synchronously and returns a status message when it completes.
+
+### Response
+
+<ResponseField name="status" type="string">
+  Result message from the purge operation, for example `"Purge complete"`.
+</ResponseField>
+
+**HTTP 200** — Returns the purge status.
+
+<Warning>
+  This operation permanently deletes historical point value records that fall outside the configured purge period. It cannot be undone.
+</Warning>
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/purgeData" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{ "status": "Purge complete" }
+```
+
+---
+
+## GET /api/systemSettings/getStartupTime
+
+Return the timestamp at which the Scada-LTS application server was last started. Useful for monitoring uptime and diagnosing unexpected restarts.
+
+### Response
+
+<ResponseField name="startupTime" type="string">
+  ISO 8601 or locale-formatted string representing when the server started.
+</ResponseField>
+
+**HTTP 200** — Returns the startup time.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getStartupTime" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{ "startupTime": "2026-04-18T06:00:00.000Z" }
+```
+
+---
+
+## GET /api/systemSettings/getSchemaVersion
+
+Return the current database schema version. Use this to verify that schema migrations have been applied correctly after an upgrade.
+
+### Response
+
+<ResponseField name="schemaVersion" type="string">
+  String representing the current database schema version number.
+</ResponseField>
+
+**HTTP 200** — Returns the schema version.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getSchemaVersion" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{ "schemaVersion": "2.7.0" }
+```
+
+---
+
+## GET /api/systemSettings/getScadaConfig
+
+Return the internal Scada-LTS runtime configuration flags that control caching, ACL integration, update polling intervals, and other low-level behaviours.
+
+### Response
+
+<ResponseField name="apiReplaceAlertOnView" type="boolean">
+  Whether API-triggered value sets replace existing view alerts.
+</ResponseField>
+
+<ResponseField name="cacheEnable" type="boolean">
+  Whether the data point value cache is active.
+</ResponseField>
+
+<ResponseField name="startUpdateUnsilencedAlarmLevel" type="number">
+  Delay in seconds before unsilenced alarm level polling starts on startup.
+</ResponseField>
+
+<ResponseField name="startUpdateEventDetectors" type="number">
+  Delay in seconds before event detector update polling starts on startup.
+</ResponseField>
+
+<ResponseField name="startUpdatePendingEvents" type="number">
+  Delay in seconds before pending event update polling starts on startup.
+</ResponseField>
+
+<ResponseField name="millisSecondsPeriodUpdateUnsilencedAlarmLevel" type="number">
+  Polling interval in milliseconds for unsilenced alarm level updates.
+</ResponseField>
+
+<ResponseField name="millisSecondsPeriodUpdateEventDetectors" type="number">
+  Polling interval in milliseconds for event detector updates.
+</ResponseField>
+
+<ResponseField name="millisSecondsPeriodUpdatePendingEvents" type="number">
+  Polling interval in milliseconds for pending event updates.
+</ResponseField>
+
+<ResponseField name="croneUpdateCachePointHierarchy" type="string">
+  Cron expression controlling when the point hierarchy cache is refreshed.
+</ResponseField>
+
+<ResponseField name="croneUpdateDataSourcesPoints" type="string">
+  Cron expression controlling when the data source point list cache is refreshed.
+</ResponseField>
+
+<ResponseField name="useCacheDataSourcePointsWhenSystemIsReady" type="boolean">
+  Whether the data source point cache is used only after the system has fully initialised.
+</ResponseField>
+
+<ResponseField name="useAcl" type="boolean">
+  Whether ACL-based access control is enabled.
+</ResponseField>
+
+<ResponseField name="aclServer" type="string">
+  Hostname or URL of the external ACL server when ACL is enabled.
+</ResponseField>
+
+<ResponseField name="doNotCreateEventsForEmailError" type="boolean">
+  Whether email delivery failures silently fail instead of generating system events.
+</ResponseField>
+
+<ResponseField name="httpRetriverSleepCheckToReactivationWhenStart" type="boolean">
+  Whether the HTTP retriever waits before checking reactivation conditions on startup.
+</ResponseField>
+
+<ResponseField name="httpRetriverDoNotAllowEnableReactivation" type="boolean">
+  Whether the HTTP retriever is prevented from enabling automatic data source reactivation.
+</ResponseField>
+
+**HTTP 200** — Returns the Scada runtime configuration object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/systemSettings/getScadaConfig" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "apiReplaceAlertOnView": false,
+  "cacheEnable": true,
+  "startUpdateUnsilencedAlarmLevel": 5,
+  "startUpdateEventDetectors": 10,
+  "startUpdatePendingEvents": 15,
+  "millisSecondsPeriodUpdateUnsilencedAlarmLevel": 5000,
+  "millisSecondsPeriodUpdateEventDetectors": 5000,
+  "millisSecondsPeriodUpdatePendingEvents": 5000,
+  "croneUpdateCachePointHierarchy": "0 0 * * * ?",
+  "croneUpdateDataSourcesPoints": "0 */5 * * * ?",
+  "useCacheDataSourcePointsWhenSystemIsReady": true,
+  "useAcl": false,
+  "aclServer": "",
+  "doNotCreateEventsForEmailError": false,
+  "httpRetriverSleepCheckToReactivationWhenStart": false,
+  "httpRetriverDoNotAllowEnableReactivation": false
+}
+```

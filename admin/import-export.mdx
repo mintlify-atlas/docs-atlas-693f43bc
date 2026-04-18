@@ -1,0 +1,161 @@
+---
+title: "Import and Export Full Scada-LTS System Configuration"
+description: "Back up and restore your Scada-LTS configuration using XML export and import. Transfer data sources, points, views, and user settings between systems."
+---
+
+Scada-LTS stores its entire configuration — data sources, data points, graphical views, event handlers, user profiles, watch lists, and the point hierarchy — in a structured format that can be exported to a file and imported back on the same or a different instance. This makes it straightforward to create backups before major changes, migrate a configuration between staging and production environments, or duplicate a setup across multiple sites.
+
+The Import/Export feature is accessed through **System → Import/Export** in the main menu. The underlying page is served from `emport.shtm` and embedded in the modern UI as an iframe.
+
+---
+
+## What gets exported
+
+A full export captures every object that makes up a working Scada-LTS configuration:
+
+| Object type | Description |
+|---|---|
+| **Data sources** | All configured data source definitions including connection parameters and polling intervals |
+| **Data points** | Every data point linked to those sources, including logging, scaling, and chart settings |
+| **Graphical views** | View layouts and component configurations |
+| **Event handlers** | Email, SMS, process, and set-point handlers attached to events |
+| **User profiles** | User accounts and their permission settings |
+| **Watch lists** | Named collections of data points for monitoring |
+| **Point hierarchy** | Folder structure that organises data points in the browse tree |
+| **Publishers** | Publisher definitions and the points they forward |
+
+<Info>
+  System settings such as SMTP credentials, HTTP proxy, and data retention periods are **not** included in a standard configuration export. These are instance-specific and must be reconfigured manually on the target system.
+</Info>
+
+---
+
+## XML-based configuration format
+
+Scada-LTS exports configuration as a single XML document. The file uses the same structure that the `emport` subsystem reads at import time. Each top-level element corresponds to a Scada-LTS object type (e.g. `<dataSources>`, `<dataPoints>`, `<graphicalViews>`). Each individual object within those sections is identified by its **XID** (export identifier) — a stable string key such as `DS_MODBUS_01` or `DP_TEMP_SENSOR` that is used to match records during import.
+
+```xml
+<!-- Abbreviated example of an exported configuration fragment -->
+<emport>
+  <dataSources>
+    <dataSource xid="DS_MODBUS_01" name="PLC Line 1" type="MODBUS_IP">
+      ...
+    </dataSource>
+  </dataSources>
+  <dataPoints>
+    <dataPoint xid="DP_TEMP_LINE1" name="Temperature Line 1" dataSourceXid="DS_MODBUS_01">
+      ...
+    </dataPoint>
+  </dataPoints>
+</emport>
+```
+
+---
+
+## Export process (UI)
+
+<Steps>
+  <Step title="Open Import/Export">
+    Navigate to **System → Import/Export** from the main navigation menu.
+  </Step>
+  <Step title="Select export scope">
+    The export page presents checkboxes or selection controls for each object type. You can choose to export everything or limit the export to specific types (see Partial Exports below).
+  </Step>
+  <Step title="Click Export">
+    Click the **Export** button. Scada-LTS generates the XML and prompts your browser to download the file. The file name contains a timestamp so successive exports do not overwrite each other.
+  </Step>
+  <Step title="Save the file">
+    Store the downloaded XML file in a secure location. Treat it as sensitive data — it may contain connection strings, XID references, and user information.
+  </Step>
+</Steps>
+
+---
+
+## Import process (UI)
+
+<Steps>
+  <Step title="Open Import/Export">
+    Navigate to **System → Import/Export**.
+  </Step>
+  <Step title="Choose the XML file">
+    Click **Browse** (or the file-chooser control) and select the previously exported XML file from your local machine.
+  </Step>
+  <Step title="Click Import">
+    Click the **Import** button. Scada-LTS reads the file and applies each object. Objects with XIDs that already exist in the system are updated; new XIDs are created.
+  </Step>
+  <Step title="Review the import report">
+    After the operation completes, the page displays a report listing each object, whether it was created or updated, and any errors encountered. Address any errors before relying on the imported configuration.
+  </Step>
+</Steps>
+
+<Warning>
+  Importing a configuration **overwrites** existing objects that share the same XID. Data points that already have logged values will retain their historical data, but their configuration (name, logging settings, scaling) will be replaced by the values in the import file. Always export your current configuration as a backup before importing.
+</Warning>
+
+---
+
+## Using the REST API for export
+
+Scada-LTS exposes a REST endpoint that exports the full system configuration as a ZIP archive. This is useful for automated backups and CI/CD pipelines.
+
+**Endpoint:** `GET /api/export/config/`
+
+All query parameters are optional:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `projectName` | string | `From system` | Label embedded in the export archive |
+| `projectDescription` | string | *(empty)* | Optional description string |
+| `pointValuesMax` | integer | `100` | Maximum number of historical point values included per data point |
+| `includeUploadFolder` | boolean | `false` | Bundle the `uploads` file directory into the archive |
+| `includeGraphicalFolder` | boolean | `false` | Bundle the `graphics` file directory into the archive |
+
+**Example — full export with default settings:**
+
+```bash
+curl -u admin:admin \
+  "http://localhost:8080/Scada-LTS/api/export/config/" \
+  --output scada-backup.zip
+```
+
+**Example — export with historical values and graphics:**
+
+```bash
+curl -u admin:admin \
+  "http://localhost:8080/Scada-LTS/api/export/config/?pointValuesMax=500&includeGraphicalFolder=true" \
+  --output scada-full-backup.zip
+```
+
+<Note>
+  The API endpoint requires HTTP Basic Authentication. Use your Scada-LTS admin credentials. For production systems, ensure the API endpoint is accessed over HTTPS.
+</Note>
+
+---
+
+## Partial exports
+
+You do not have to export all object types at once. On the Export page, you can select only the types you need. Common scenarios for partial exports:
+
+<AccordionGroup>
+  <Accordion title="Exporting only data source and point definitions">
+    Useful when moving measurement configuration to a new instance while leaving views and user accounts in place. Select only **Data Sources** and **Data Points** before exporting.
+  </Accordion>
+  <Accordion title="Exporting only graphical views">
+    Graphical views can be developed on a local instance and then deployed to a production server. Export only **Graphical Views** and import that file on the target system. Ensure that the referenced data point XIDs also exist on the target.
+  </Accordion>
+  <Accordion title="Exporting user profiles for a new deployment">
+    Copy user accounts and permissions from one instance to another by exporting only **Users**. Passwords are included in hashed form.
+  </Accordion>
+  <Accordion title="Exporting the point hierarchy">
+    Export just the **Point Hierarchy** to replicate your folder structure on another instance that already has the same data points configured.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Common use cases
+
+- **Backup before upgrades** — export the full configuration before applying a Scada-LTS version update. If the upgrade causes issues, re-import to restore the previous state.
+- **Environment promotion** — develop and test configuration changes on a staging server, then export and import to production.
+- **Multi-site replication** — export a base configuration from one site and import it to additional sites, then adjust site-specific connection parameters.
+- **Version control** — store the exported XML file in a Git repository to track configuration changes over time using standard diff tools.

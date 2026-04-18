@@ -1,0 +1,107 @@
+---
+title: "Generate Historical Reports from Data Point Values"
+description: "Create historical data reports in Scada-LTS by selecting data points, a time range, and report type. Export results for offline analysis."
+---
+
+The Reports module lets you query the historical value log for any set of data points and render the results as tabular data and charts. Report configurations are saved with a name and an XID so they can be re-run at any time, scheduled to execute automatically, and optionally emailed to a list of recipients.
+
+## How reports work
+
+A report is defined by a `ReportVO` object that records which data points to include, what time window to cover, whether to attach alarm events and user comments, and how to deliver the output. When a report is run, Scada-LTS queries the point value history for each configured point over the requested period and assembles the results. Report instances (the executed results) are stored separately from the report definition, so you can view historical runs without re-running the report.
+
+## Date range types
+
+<Tabs>
+  <Tab title="Relative date range">
+    The report always covers a rolling window relative to the time it is run. Two modes are available:
+
+    - **Previous** — the _previous_ N full periods (e.g. the previous 7 days, not including today).
+    - **Past** — the _past_ N periods counting back from the moment of execution (e.g. the past 24 hours).
+
+    Supported period units are minutes, hours, days, weeks, months, and years.
+  </Tab>
+  <Tab title="Specific date range">
+    You provide explicit **Start Date**, **Start Time**, **End Date**, and **End Time** values using the date/time pickers. Check **From inception** to start from the very first recorded value for each point, or **Latest** to extend the end boundary to the current moment when the report runs.
+  </Tab>
+</Tabs>
+
+## Event and comment inclusion
+
+Each report has an `includeEvents` setting with three options:
+
+| Value | Meaning |
+|-------|---------|
+| None | Alarm events are not included in the output |
+| Alarms | Only alarm-level events are included (default) |
+| All | All event types are included |
+
+You can also toggle **Include user comments** to attach any comments that operators have added to point values within the date range.
+
+## Creating a report
+
+<Steps>
+  <Step title="Navigate to Reports">
+    Open **Reports** from the main menu. The page lists your existing saved report configurations on the left.
+  </Step>
+  <Step title="Create a new report template">
+    Click the **New template** button. A form opens with a generated report ID and empty fields.
+  </Step>
+  <Step title="Name the report">
+    Enter a **Name** for the report (up to 100 characters). This name appears in the saved list and in any email subject lines.
+  </Step>
+  <Step title="Add data points">
+    Click **Data Points Settings** to open the point selection dialog. Select each data point you want to include. For each point you can also assign a display colour used in chart output.
+  </Step>
+  <Step title="Configure the date range">
+    Choose **Relative** or **Specific** from the date range selector and fill in the appropriate fields. At least one data point and a valid date range are required before the report can be saved.
+  </Step>
+  <Step title="Save and run">
+    Click the **Save** button (floppy disk icon) in the form header. To run the report immediately, use the **Run** action on the saved configuration. Results appear in the report instances list below the configuration.
+  </Step>
+</Steps>
+
+## Scheduled reports
+
+Enable the **Schedule** checkbox to run a report automatically on a repeating basis. You can choose a fixed period (minutes, hours, days, weeks, months, years) plus an optional run-delay in minutes, or enter a **Cron pattern** for full scheduling control.
+
+```
+# Example cron patterns
+0 0 * * *        # Every day at midnight
+0 6 * * 1        # Every Monday at 06:00
+0 */4 * * *      # Every 4 hours
+```
+
+<Note>
+  When using a cron pattern the expression must follow the standard five-field format. The form validates the pattern before saving and shows an error if it is invalid.
+</Note>
+
+## Email delivery
+
+Turn on **Email report** to send the output to a list of recipients when the report runs on schedule. Recipients can be:
+
+- Individual **Users** registered in Scada-LTS
+- **Recipient lists** (mailing lists configured under User Management)
+- Ad-hoc **email addresses** typed directly into the form
+
+You can include tabular data as an attachment and optionally compress it into a `.zip` file to reduce email size. Use **Send test emails** to verify delivery to all configured recipients before the first scheduled run.
+
+## Export and offline analysis
+
+The tabular data attachment contains one row per recorded value for each point in the report period, making it straightforward to import into spreadsheet tools or time-series databases for further analysis.
+
+<Warning>
+  A report will only contain values for periods when a data point was actively logging. If a point's logging mode is set to **None** or the data source was offline during part of the requested range, those gaps will appear as missing rows in the output. Review the data point logging configuration if you see unexpected gaps.
+</Warning>
+
+## Saved report configurations
+
+Every report you save is stored with a unique `xid` (prefixed `REP_`) and associated with your user account. Saved reports are visible only to their owner unless exported via the system configuration export. Administrators can view all users' reports from the administration interface.
+
+<CardGroup cols={2}>
+  <Card title="Watch Lists" icon="list-check" href="/guide/watchlist">
+    Monitor live point values and alarm states in real time.
+  </Card>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Configure logging mode and interval to ensure data is available for reports.
+  </Card>
+</CardGroup>

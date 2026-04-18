@@ -1,0 +1,334 @@
+---
+title: "REST API: Point Values — Read History and Write Outputs"
+description: "Read current and historical values for any data point by XID or ID, and write output values to settable points using the Point Value API."
+---
+
+The Point Values API is the primary interface for reading live process data and writing output values to settable data points. You can retrieve the current value of any point by XID or numeric ID, write new values using path parameters or a request body, and query historical value ranges using Unix timestamps. This API is essential for dashboards, integrations, and automation scripts that need direct access to field-level data.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require HTTP Basic authentication.
+
+<Note>
+  The primary authentication method is session cookies — see [Authentication](/api/authentication) for the full flow. The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing.
+</Note>
+
+---
+
+## GET /api/point\_value/getValue/{xid}
+
+Retrieve the most recent value of a data point identified by its export identifier (XID). The response includes the formatted display value, raw value, timestamp, data type, and chart colour.
+
+<ParamField path="xid" type="string" required>
+  The export identifier (XID) of the data point, for example `DP_TEMP_01`.
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  Display name of the data point.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) of the data point.
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  Raw current value as a string.
+</ResponseField>
+
+<ResponseField name="formattedValue" type="string">
+  Human-readable value after applying the text renderer (e.g. with units or state labels).
+</ResponseField>
+
+<ResponseField name="ts" type="number">
+  Unix timestamp (milliseconds) when this value was recorded.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Data type of the point: `BinaryValue`, `MultistateValue`, `NumericValue`, or `AlphanumericValue`.
+</ResponseField>
+
+<ResponseField name="textRenderer" type="object">
+  Renderer configuration used to format the display value.
+</ResponseField>
+
+<ResponseField name="chartColour" type="string">
+  Hex colour string used when charting this point.
+</ResponseField>
+
+**HTTP 200** — Returns the current point value object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/point_value/getValue/DP_TEMP_01" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "name": "Room Temperature",
+  "xid": "DP_TEMP_01",
+  "value": "22.5",
+  "formattedValue": "22.5 °C",
+  "ts": 1713430800000,
+  "type": "NumericValue",
+  "textRenderer": {},
+  "chartColour": "#FF5733"
+}
+```
+
+---
+
+## GET /api/point\_value/getValue/id/{id}
+
+Retrieve the most recent value of a data point by its numeric ID. Functionally identical to the XID variant; use this form when you have the internal ID rather than the XID.
+
+<ParamField path="id" type="number" required>
+  The internal numeric identifier of the data point.
+</ParamField>
+
+### Response
+
+Response fields are identical to `GET /api/point_value/getValue/{xid}`.
+
+**HTTP 200** — Returns the current point value object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/point_value/getValue/id/12" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "name": "Room Temperature",
+  "xid": "DP_TEMP_01",
+  "value": "22.5",
+  "formattedValue": "22.5 °C",
+  "ts": 1713430800000,
+  "type": "NumericValue",
+  "textRenderer": {},
+  "chartColour": "#FF5733"
+}
+```
+
+---
+
+## POST /api/point\_value/setValue/{xid}/{type}/
+
+Set a new output value on a settable data point. The value is passed in the raw request body. The `type` path parameter maps to the data type of the point.
+
+<Warning>
+  Only data points with `settable: true` accept write operations. Writing to a non-settable point has no effect.
+</Warning>
+
+<ParamField path="xid" type="string" required>
+  The export identifier (XID) of the data point to write.
+</ParamField>
+
+<ParamField path="type" type="string" required>
+  Numeric data type code for the value being written:
+  - `0` — unknown
+  - `1` — binary (use `0` or `1`)
+  - `2` — multistate
+  - `3` — double (numeric)
+  - `4` — string (alphanumeric)
+</ParamField>
+
+<ParamField body="(raw body)" type="string" required>
+  The value to set, sent as a plain text request body. For binary points use `0` or `1`. For numeric points use a decimal number.
+</ParamField>
+
+**HTTP 200** — Value was accepted and queued for writing to the point.
+
+```bash
+# Set a numeric point to 25.0
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/point_value/setValue/DP_TEMP_01/3/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: raw" \
+  --data-raw "25.0"
+```
+
+```bash
+# Set a binary point to 1 (on)
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/point_value/setValue/DP_STATUS_01/1/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: raw" \
+  --data-raw "1"
+```
+
+<Note>
+  The legacy endpoint `POST /api/point_value/setValue/{xid}/{type}/{value}` (where the value is a path segment) is deprecated. Use the body-based form shown above.
+</Note>
+
+---
+
+## GET /api/point\_value/getValuesFromTime/{ts}/{xid}
+
+Retrieve all recorded values for a data point from a given Unix timestamp (milliseconds) up to the present. Useful for catch-up queries after a gap in connectivity.
+
+<ParamField path="ts" type="number" required>
+  Start time as a Unix timestamp in milliseconds.
+</ParamField>
+
+<ParamField path="xid" type="string" required>
+  The export identifier (XID) of the data point.
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  Display name of the data point.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID).
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Data type of the point.
+</ResponseField>
+
+<ResponseField name="fromTs" type="number">
+  The start timestamp supplied in the request.
+</ResponseField>
+
+<ResponseField name="toTs" type="number">
+  The end timestamp of the returned range (approximately the time of the request).
+</ResponseField>
+
+<ResponseField name="textRenderer" type="object">
+  Renderer configuration.
+</ResponseField>
+
+<ResponseField name="chartColour" type="string">
+  Chart colour string.
+</ResponseField>
+
+<ResponseField name="values" type="array">
+  Array of historical value entries.
+  <Expandable title="properties">
+    <ResponseField name="value" type="string">
+      The recorded value.
+    </ResponseField>
+    <ResponseField name="ts" type="number">
+      Unix timestamp (milliseconds) when the value was recorded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**HTTP 200** — Returns the point metadata and an array of historical values.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/point_value/getValuesFromTime/1713340800000/DP_TEMP_01" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "name": "Room Temperature",
+  "xid": "DP_TEMP_01",
+  "type": "NumericValue",
+  "fromTs": 1713340800000,
+  "toTs": 1713430800000,
+  "textRenderer": {},
+  "chartColour": "#FF5733",
+  "values": [
+    { "value": "21.8", "ts": 1713344400000 },
+    { "value": "22.1", "ts": 1713348000000 },
+    { "value": "22.5", "ts": 1713430800000 }
+  ]
+}
+```
+
+---
+
+## GET /api/point\_value/getValuesFromTime/id/{ts}/{id}
+
+Same as the XID variant above, but identifies the data point by its numeric ID.
+
+<ParamField path="ts" type="number" required>
+  Start time as a Unix timestamp in milliseconds.
+</ParamField>
+
+<ParamField path="id" type="number" required>
+  The internal numeric identifier of the data point.
+</ParamField>
+
+**HTTP 200** — Returns the same response shape as `getValuesFromTime/{ts}/{xid}`.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/point_value/getValuesFromTime/id/1713340800000/12" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+---
+
+## GET /api/point\_value/getValuesFromTimePeriod/xid/{xid}/{sts}/{ets}
+
+Retrieve historical values for a data point within an explicit time window defined by start and end Unix timestamps.
+
+<ParamField path="xid" type="string" required>
+  The export identifier (XID) of the data point.
+</ParamField>
+
+<ParamField path="sts" type="number" required>
+  Start timestamp in milliseconds (sts = start time stamp).
+</ParamField>
+
+<ParamField path="ets" type="number" required>
+  End timestamp in milliseconds (ets = end time stamp).
+</ParamField>
+
+**HTTP 200** — Returns the same `PointValuesJSON` response shape as `getValuesFromTime`.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/point_value/getValuesFromTimePeriod/xid/DP_TEMP_01/1713340800000/1713430800000" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "name": "Room Temperature",
+  "xid": "DP_TEMP_01",
+  "type": "NumericValue",
+  "fromTs": 1713340800000,
+  "toTs": 1713430800000,
+  "textRenderer": {},
+  "chartColour": "#FF5733",
+  "values": [
+    { "value": "21.8", "ts": 1713344400000 },
+    { "value": "22.5", "ts": 1713430800000 }
+  ]
+}
+```
+
+---
+
+## GET /api/point\_value/getValuesFromTimePeriod/{id}/{sts}/{ets}
+
+Same as the XID variant above, but identifies the data point by its numeric ID.
+
+<ParamField path="id" type="number" required>
+  The internal numeric identifier of the data point.
+</ParamField>
+
+<ParamField path="sts" type="number" required>
+  Start timestamp in milliseconds.
+</ParamField>
+
+<ParamField path="ets" type="number" required>
+  End timestamp in milliseconds.
+</ParamField>
+
+**HTTP 200** — Returns the same `PointValuesJSON` response shape.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/point_value/getValuesFromTimePeriod/12/1713340800000/1713430800000" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```

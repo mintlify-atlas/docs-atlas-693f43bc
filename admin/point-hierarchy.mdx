@@ -1,0 +1,189 @@
+---
+title: "Organize Data Points Using the Point Hierarchy Tree"
+description: "Point hierarchy in Scada-LTS organizes data points into a folder tree, making it easy to navigate thousands of points across complex installations."
+---
+
+Point Hierarchy is a logical folder tree that sits on top of your data points. Every data point in Scada-LTS is collected under a data source, but data sources reflect communication topology rather than physical or functional layout. The Point Hierarchy lets you re-organise the same points into a structure that matches your plant floor, building, or process — for example, grouping all sensors on a production line together regardless of which PLC or protocol they come from. This hierarchy then drives the browse tree in Watch Lists, making it much faster for operators to locate specific measurements in large installations.
+
+Navigate to **Data Objects → Point Hierarchy** to manage the tree.
+
+---
+
+## How point hierarchy works
+
+The hierarchy is a tree of `PointFolder` objects. Each folder can contain:
+
+- **Child folders** (subfolders) — arbitrarily deep nesting is supported
+- **Data points** — any configured data point can be placed in any folder
+
+A single root folder (ID `0`) anchors the entire tree. Folders created at the top level of the UI become direct children of this root. Each folder and each data point also carries an **XID** (Export ID) — a stable string identifier used when exporting and importing the hierarchy via configuration files or the REST API.
+
+Data points are not moved out of their data source when added to a folder; they remain fully functional there. Hierarchy placement is a display-layer concern only.
+
+---
+
+## Creating folders and subfolders
+
+<Steps>
+  <Step title="Open Point Hierarchy">
+    Navigate to **Data Objects → Point Hierarchy** from the main menu.
+  </Step>
+  <Step title="Create a root-level folder">
+    Click the **New Folder** button (plus-box icon) in the toolbar. A dialog appears asking for a folder name. Enter the name and confirm. The folder appears at the top level of the tree.
+  </Step>
+  <Step title="Create a subfolder">
+    Click the **expand** (folder) icon on an existing folder to open it, then use the add-folder action that appears within that node's context, or drag a newly created root folder into the target parent folder.
+  </Step>
+  <Step title="Rename a folder">
+    Click the **pencil** icon on any folder row to open the Edit dialog. Change the name and save.
+  </Step>
+  <Step title="Delete a folder">
+    Click the **delete** (trash) icon on a folder. A confirmation dialog appears before the deletion is committed. Deleting a folder removes the folder itself; data points inside are not deleted — they return to the unassigned pool.
+  </Step>
+</Steps>
+
+---
+
+## Moving data points into folders
+
+The Point Hierarchy UI supports **drag-and-drop** reordering and reparenting powered by the `vuedraggable` library. Both folders and individual data points can be dragged.
+
+<Steps>
+  <Step title="Locate the data point">
+    Expand the tree until you can see the data point you want to move. Data points are shown with a cube icon (`mdi-cube-outline`); folders use a folder icon.
+  </Step>
+  <Step title="Drag the item">
+    Click and hold the item, then drag it to the destination folder. Release to drop. The UI immediately dispatches a `movePointHierarchyNode` API call to persist the change.
+  </Step>
+  <Step title="Verify placement">
+    The item should appear under its new parent folder. If the move fails (network error or validation failure), the UI displays an error notification and the item stays in its original location.
+  </Step>
+</Steps>
+
+<Tip>
+  You can toggle the **Show data source name** button (database icon in the toolbar) to display the originating data source next to each data point. This helps when multiple sources contribute similarly-named points to the same folder.
+</Tip>
+
+---
+
+## The XID concept
+
+Every folder in the point hierarchy has an **XID** (Export ID). The XID is the stable identifier used when:
+
+- Exporting the hierarchy as part of a configuration XML or ZIP file
+- Importing hierarchy definitions onto another Scada-LTS instance
+- Referencing a folder from the REST API
+
+You can view a folder's XID and its numeric **Element Key** (internal database ID) by clicking the **info** icon (`mdi-information`) on any folder row. The info dialog also shows the folder's **Parent Key**, which maps to the parent folder's element key.
+
+```
+Name:         Production Line 1
+Export ID:    PH_FOLDER_LINE1
+Element Key:  42
+Parent Key:   0
+```
+
+When importing a configuration, Scada-LTS matches folders by XID. If an imported folder XID already exists, the folder is updated; if it is new, it is created.
+
+---
+
+## REST API for hierarchy management
+
+Scada-LTS exposes a REST API for programmatic hierarchy management. The following operations are supported:
+
+| Operation | Method | Path |
+|---|---|---|
+| Fetch node and its children | `GET` | `/api/pointHierarchy/{nodeId}` |
+| Create a new folder node | `POST` | `/api/pointHierarchy` |
+| Edit a folder node | `PUT` | `/api/pointHierarchy/{nodeId}` |
+| Move a node to a new parent | `PUT` | `/api/pointHierarchy/move/{nodeId}` |
+| Delete a node | `DELETE` | `/api/pointHierarchy/{nodeId}` |
+
+**Fetch the root node (all top-level folders):**
+
+```bash
+curl -u admin:admin \
+  "http://localhost:8080/Scada-LTS/api/pointHierarchy/0"
+```
+
+**Create a new folder under the root:**
+
+```bash
+curl -u admin:admin -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"parentNodeId": 0, "nodeName": "Production Line 2"}' \
+  "http://localhost:8080/Scada-LTS/api/pointHierarchy"
+```
+
+The root node always has ID `0`. All child IDs are assigned by the server and returned in the response.
+
+---
+
+## How hierarchy affects the UI
+
+The point hierarchy is surfaced in several places across the Scada-LTS interface:
+
+- **Watch Lists** — when adding points to a watch list, the browse tree mirrors the point hierarchy folder structure. Operators can expand folders to find points rather than scrolling through a flat alphabetical list.
+- **Graphical Views** — the point picker in graphical view editors uses the hierarchy as a navigation aid.
+- **Reports** — report configurations can use the hierarchy to select all points within a folder.
+- **Point Hierarchy page** — the primary editing interface for the tree itself.
+
+---
+
+## Setting up a hierarchy
+
+<Steps>
+  <Step title="Plan your structure before building">
+    Sketch your intended folder tree on paper or in a spreadsheet before making changes in the UI. Deciding on two to three levels of nesting (e.g. Site → Area → Equipment) avoids significant re-work later.
+  </Step>
+  <Step title="Create top-level site or area folders">
+    Use the **New Folder** button to create one folder per major area or site. Keep the count manageable — five to ten root folders is typical.
+  </Step>
+  <Step title="Add equipment-level subfolders">
+    For each area folder, create subfolders for individual pieces of equipment (pumps, compressors, conveyors, etc.).
+  </Step>
+  <Step title="Drag data points into the correct folders">
+    Expand the tree and drag points from their current location (or from the flat unassigned view) into the appropriate equipment folder.
+  </Step>
+  <Step title="Verify in Watch List">
+    Open a Watch List, click **Add points**, and verify that the browse tree reflects your new hierarchy.
+  </Step>
+  <Step title="Export the hierarchy">
+    Once satisfied, export the configuration (System → Import/Export) to preserve the hierarchy structure as a backup.
+  </Step>
+</Steps>
+
+---
+
+## Best practices for large installations
+
+<AccordionGroup>
+  <Accordion title="Naming conventions">
+    Use a consistent naming pattern across all folders so that the tree is self-describing and sortable. A common pattern is:
+
+    ```
+    [Site]-[Area]-[Equipment]-[Measurement]
+    PLANT1 / LINE-A / PUMP-01 / Discharge Pressure
+    PLANT1 / LINE-A / PUMP-01 / Motor Current
+    PLANT1 / LINE-B / CONV-01 / Belt Speed
+    ```
+
+    Avoid special characters in folder names that might cause issues in URLs or XML exports (e.g. `<`, `>`, `&`). Stick to letters, digits, hyphens, and underscores.
+  </Accordion>
+
+  <Accordion title="Depth and breadth balance">
+    Very deep trees (more than five levels) are hard to navigate. Very wide trees (more than thirty items per folder) lose the organisational benefit. Aim for two to four levels of depth with ten to twenty items per folder as a general guideline.
+  </Accordion>
+
+  <Accordion title="Using XIDs for import automation">
+    If you build a large hierarchy programmatically using the REST API or configuration import, assign meaningful XIDs to folders rather than relying on auto-generated ones. A pattern like `PH_SITE1_AREA_A_PUMP01` makes the folder uniquely identifiable in exports and diffs.
+  </Accordion>
+
+  <Accordion title="Aligning hierarchy with watch lists">
+    Design your hierarchy structure with operator watch lists in mind. If your operators typically monitor by production area during a shift, create area-level folders that map directly to watch lists. This reduces the number of clicks needed to set up a shift monitoring view.
+  </Accordion>
+
+  <Accordion title="Handling multi-site deployments">
+    In multi-site installations where a single Scada-LTS instance aggregates data from several physical locations (via Persistent publishers), prefix all top-level folders with the site identifier (e.g. `SITE1`, `SITE2`). This prevents confusion when data points from different sites share the same instrument name.
+  </Accordion>
+</AccordionGroup>

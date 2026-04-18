@@ -1,0 +1,373 @@
+---
+title: "REST API: Data Points — Retrieve by ID, XID, or Source"
+description: "REST API endpoints for listing, retrieving, and querying Scada-LTS data points by ID, XID, or data source. Includes bulk point queries."
+---
+
+The Data Points API provides access to the individual measurement channels configured in Scada-LTS. Each data point belongs to a data source and represents a single variable — such as a temperature sensor reading, a PLC register, or a digital input. Endpoints in this group return either summary identifiers or full point configuration objects depending on the call used.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require HTTP Basic authentication.
+
+<Note>
+  The primary authentication method is session cookies — see [Authentication](/api/authentication) for the full flow. The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing.
+</Note>
+
+---
+
+## GET /api/datapoint
+
+Retrieve a single data point by its numeric ID or export identifier (XID). Provide either `id` or `xid` — if both are supplied the server uses `id`. Returns the full `DataPointVO` object including logging configuration, renderers, and event detectors.
+
+<ParamField query="id" type="number">
+  The internal numeric identifier of the data point.
+</ParamField>
+
+<ParamField query="xid" type="string">
+  The export identifier (XID) of the data point, for example `DP_TEMP_01`.
+</ParamField>
+
+### Response
+
+Returns an array containing the matching `DataPointVO` object.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID).
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the data point.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description string.
+</ResponseField>
+
+<ResponseField name="dataSourceId" type="number">
+  ID of the parent data source.
+</ResponseField>
+
+<ResponseField name="deviceName" type="string">
+  Name of the device associated with this point.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean">
+  Whether the point is currently enabled.
+</ResponseField>
+
+<ResponseField name="loggingType" type="number">
+  Logging strategy for recorded values.
+</ResponseField>
+
+<ResponseField name="intervalLoggingPeriod" type="number">
+  Period between log entries when interval logging is active.
+</ResponseField>
+
+<ResponseField name="intervalLoggingPeriodType" type="number">
+  Time unit for the interval logging period.
+</ResponseField>
+
+<ResponseField name="intervalLoggingType" type="number">
+  Which value (instant, average, maximum, minimum) is stored at each interval.
+</ResponseField>
+
+<ResponseField name="tolerance" type="number">
+  Change tolerance below which new values are not logged.
+</ResponseField>
+
+<ResponseField name="purgeType" type="number">
+  Time unit for the purge period.
+</ResponseField>
+
+<ResponseField name="purgePeriod" type="number">
+  Age at which historical values are purged.
+</ResponseField>
+
+<ResponseField name="defaultCacheSize" type="number">
+  Number of recent values held in memory.
+</ResponseField>
+
+<ResponseField name="discardExtremeValues" type="boolean">
+  Whether values outside the discard limits are rejected.
+</ResponseField>
+
+<ResponseField name="discardLowLimit" type="string">
+  Lower bound for extreme-value discarding.
+</ResponseField>
+
+<ResponseField name="discardHighLimit" type="number">
+  Upper bound for extreme-value discarding.
+</ResponseField>
+
+<ResponseField name="engineeringUnits" type="number">
+  Engineering units code for the point value.
+</ResponseField>
+
+<ResponseField name="chartColour" type="string">
+  Hex colour string used when charting this point.
+</ResponseField>
+
+<ResponseField name="textRenderer" type="object">
+  Renderer configuration for displaying human-readable values.
+</ResponseField>
+
+<ResponseField name="eventTextRenderer" type="object">
+  Renderer configuration for event text display.
+</ResponseField>
+
+<ResponseField name="chartRenderer" type="object">
+  Chart renderer configuration.
+</ResponseField>
+
+<ResponseField name="eventDetectors" type="array">
+  List of event detector objects attached to this point.
+</ResponseField>
+
+<ResponseField name="comments" type="array">
+  User comments associated with this point.
+</ResponseField>
+
+**HTTP 200** — Returns an array with the matching data point object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datapoint?xid=DP_TEMP_01" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 12,
+    "xid": "DP_TEMP_01",
+    "name": "Room Temperature",
+    "description": "Temperature sensor in room A",
+    "dataSourceId": 3,
+    "deviceName": "Modbus TCP Device",
+    "enabled": true,
+    "loggingType": 1,
+    "intervalLoggingPeriod": 5,
+    "intervalLoggingPeriodType": 2,
+    "tolerance": 0.1,
+    "purgeType": 4,
+    "purgePeriod": 1,
+    "chartColour": "#FF5733",
+    "engineeringUnits": 62,
+    "discardExtremeValues": false
+  }
+]
+```
+
+---
+
+## GET /api/datapoints
+
+List all data points in the system with detailed configuration. Returns the full `JsonDataPoint` object for every registered point. This response can be large in systems with many points.
+
+### Response
+
+Returns an array of `JsonDataPoint` objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID).
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean">
+  Whether the point is enabled.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description.
+</ResponseField>
+
+<ResponseField name="datasourceName" type="string">
+  Name of the parent data source.
+</ResponseField>
+
+<ResponseField name="typeId" type="number">
+  Numeric data type identifier (e.g. binary, numeric, multistate).
+</ResponseField>
+
+<ResponseField name="settable" type="boolean">
+  Whether the point value can be written via the API.
+</ResponseField>
+
+**HTTP 200** — Returns an array of data point objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datapoints" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 12,
+    "xid": "DP_TEMP_01",
+    "name": "Room Temperature",
+    "enabled": true,
+    "description": "Temperature sensor in room A",
+    "datasourceName": "Modbus TCP Device",
+    "typeId": 3,
+    "settable": false
+  },
+  {
+    "id": 13,
+    "xid": "DP_STATUS_01",
+    "name": "Motor Status",
+    "enabled": true,
+    "description": "",
+    "datasourceName": "Modbus TCP Device",
+    "typeId": 1,
+    "settable": true
+  }
+]
+```
+
+---
+
+## GET /api/datapoints/datasource
+
+List all data points that belong to a specific data source. The `id` parameter is required and must be the numeric ID of the data source, not its XID.
+
+<ParamField query="id" type="number" required>
+  The numeric ID of the parent data source.
+</ParamField>
+
+### Response
+
+Returns an array of `JsonDataPoint` objects scoped to the specified data source. Fields are identical to those returned by `GET /api/datapoints`.
+
+**HTTP 200** — Returns an array of data point objects for the given data source.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datapoints/datasource?id=3" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 12,
+    "xid": "DP_TEMP_01",
+    "name": "Room Temperature",
+    "enabled": true,
+    "description": "Temperature sensor in room A",
+    "datasourceName": "Modbus TCP Device",
+    "typeId": 3,
+    "settable": false
+  }
+]
+```
+
+---
+
+## GET /api/datapoint/getAll
+
+Return a lightweight list of all data point identifiers. Each entry contains only the ID, name, XID, and description — useful for building lookup tables or populating UI selectors without fetching full configuration objects.
+
+### Response
+
+Returns an array of summary objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the data point.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID).
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description.
+</ResponseField>
+
+**HTTP 200** — Returns an array of data point summary objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datapoint/getAll" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 12,
+    "name": "Room Temperature",
+    "xid": "DP_TEMP_01",
+    "description": "Temperature sensor in room A"
+  },
+  {
+    "id": 13,
+    "name": "Motor Status",
+    "xid": "DP_STATUS_01",
+    "description": ""
+  }
+]
+```
+
+---
+
+## GET /api/datapoint/{datasourceId}/getAllPlc
+
+Return lightweight identifier objects for all PLC-type data points belonging to a specific data source. This endpoint is targeted at PLC-oriented integrations and returns the same summary shape as `getAll`.
+
+<ParamField path="datasourceId" type="number" required>
+  The numeric ID of the parent data source.
+</ParamField>
+
+### Response
+
+Returns an array of summary objects scoped to PLC data points.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the data point.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID).
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description.
+</ResponseField>
+
+**HTTP 200** — Returns an array of PLC data point summary objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datapoint/3/getAllPlc" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 14,
+    "name": "PLC Register 01",
+    "xid": "DP_PLC_01",
+    "description": "Holding register 40001"
+  }
+]
+```

@@ -1,0 +1,349 @@
+---
+title: "REST API: Watch Lists — Retrieve and Query Point Data"
+description: "Read and manage Scada-LTS watch lists via the REST API. Retrieve saved watch list configurations and the data points they contain."
+---
+
+Watch lists in Scada-LTS are saved collections of data points that operators can monitor together on a single screen. The Watch Lists API lets you retrieve all configured watch lists, look up an individual list by ID or XID, fetch the names of all lists, and pull the data points contained within a specific list. You can also retrieve historical chart data for any watch list over a chosen time range.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require an active session. See [Authentication](/api/authentication) for the login flow.
+
+<Note>
+  The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing. In production, use the session cookie obtained from `/api/auth/{username}/{password}`.
+</Note>
+
+---
+
+## GET /api/watch-lists
+
+List all watch lists in the system. Returns a summary array with ID, XID, and name for each watch list — suitable for building selection menus or further lookups by ID.
+
+### Response
+
+Returns a JSON array of watch list summary objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier of the watch list.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) of the watch list.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable display name of the watch list.
+</ResponseField>
+
+**HTTP 200** — Returns an array of watch list identifier objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/watch-lists" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  { "id": 1, "xid": "WL_PLANT_FLOOR", "name": "Plant Floor" },
+  { "id": 2, "xid": "WL_BOILERS", "name": "Boiler Monitoring" },
+  { "id": 3, "xid": "WL_ENERGY", "name": "Energy Meters" }
+]
+```
+
+---
+
+## GET /api/watch-lists/{id}
+
+Retrieve the full details of a single watch list by its numeric ID. The response includes the owner user ID, the list of data points in the watch list, and the per-user access permissions assigned to it.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the watch list to retrieve.
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="number">
+  Internal numeric ID of the watch list.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier of the watch list.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the watch list.
+</ResponseField>
+
+<ResponseField name="userId" type="number">
+  ID of the user who owns this watch list.
+</ResponseField>
+
+<ResponseField name="pointList" type="array">
+  Array of data point objects included in this watch list.
+</ResponseField>
+
+<ResponseField name="watchListUsers" type="array">
+  Array of user access entries controlling who can view or edit the watch list.
+  <Expandable title="properties">
+    <ResponseField name="userId" type="number">
+      ID of the user granted access.
+    </ResponseField>
+    <ResponseField name="accessType" type="number">
+      Access level: `1` = read, `2` = set (read + write).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**HTTP 200** — Returns the full watch list object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/watch-lists/1" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "id": 1,
+  "xid": "WL_PLANT_FLOOR",
+  "name": "Plant Floor",
+  "userId": 1,
+  "pointList": [
+    { "id": 10, "name": "Tank Level" },
+    { "id": 12, "name": "Pump Speed" }
+  ],
+  "watchListUsers": [
+    { "userId": 2, "accessType": 1 },
+    { "userId": 3, "accessType": 2 }
+  ]
+}
+```
+
+---
+
+## GET /api/watch-lists/xid/{xid}
+
+Retrieve the full details of a single watch list by its export identifier (XID). Returns the same structure as the ID-based lookup, which is useful when you know the XID from an export or configuration file but do not have the numeric ID.
+
+<ParamField path="xid" type="string" required>
+  Export identifier (XID) of the watch list to retrieve, for example `WL_BOILERS`.
+</ParamField>
+
+### Response
+
+Returns the same fields as `GET /api/watch-lists/{id}`.
+
+<ResponseField name="id" type="number">
+  Internal numeric ID of the watch list.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier of the watch list.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the watch list.
+</ResponseField>
+
+<ResponseField name="userId" type="number">
+  ID of the owning user.
+</ResponseField>
+
+<ResponseField name="pointList" type="array">
+  Array of data point objects included in the watch list.
+</ResponseField>
+
+<ResponseField name="watchListUsers" type="array">
+  Per-user access control entries.
+  <Expandable title="properties">
+    <ResponseField name="userId" type="number">
+      ID of the user granted access.
+    </ResponseField>
+    <ResponseField name="accessType" type="number">
+      Access level for this user.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**HTTP 200** — Returns the full watch list object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/watch-lists/xid/WL_BOILERS" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "id": 2,
+  "xid": "WL_BOILERS",
+  "name": "Boiler Monitoring",
+  "userId": 1,
+  "pointList": [
+    { "id": 20, "name": "Boiler 1 Temp" },
+    { "id": 21, "name": "Boiler 2 Temp" }
+  ],
+  "watchListUsers": []
+}
+```
+
+---
+
+## GET /api/watch-lists/getNames
+
+Return a minimal list of all watch lists containing only their numeric IDs and display names. Use this endpoint when you need to populate a UI control or build a mapping table without fetching full watch list objects.
+
+### Response
+
+<ResponseField name="id" type="number">
+  Internal numeric ID of the watch list.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the watch list.
+</ResponseField>
+
+**HTTP 200** — Returns an array of name/ID pairs.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/watch-lists/getNames" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  { "id": 1, "name": "Plant Floor" },
+  { "id": 2, "name": "Boiler Monitoring" },
+  { "id": 3, "name": "Energy Meters" }
+]
+```
+
+---
+
+## GET /api/watch-lists/getPoints/{xid}
+
+Return the data points contained in the watch list identified by the given XID. The response is a lightweight array of point ID and name pairs.
+
+<ParamField path="xid" type="string" required>
+  Export identifier (XID) of the watch list whose points you want to retrieve.
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="number">
+  Internal numeric ID of the data point.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the data point.
+</ResponseField>
+
+**HTTP 200** — Returns an array of data point identifier objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/watch-lists/getPoints/WL_PLANT_FLOOR" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  { "id": 10, "name": "Tank Level" },
+  { "id": 12, "name": "Pump Speed" },
+  { "id": 15, "name": "Inlet Pressure" }
+]
+```
+
+---
+
+## GET /api/watch-lists/getChartData/{xid}/{fromData}/{toData}
+
+Retrieve historical chart data for every data point in a watch list over a specified time range. The response groups data by watch list and includes the last known value, formatted value, and rendering metadata for each point in the list.
+
+<ParamField path="xid" type="string" required>
+  Export identifier (XID) of the watch list.
+</ParamField>
+
+<ParamField path="fromData" type="string" required>
+  Start of the time range. Accepted as an ISO 8601 date string or a Unix timestamp string.
+</ParamField>
+
+<ParamField path="toData" type="string" required>
+  End of the time range. Accepted as an ISO 8601 date string or a Unix timestamp string.
+</ParamField>
+
+### Response
+
+<ResponseField name="name" type="string">
+  Display name of the watch list.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier of the watch list.
+</ResponseField>
+
+<ResponseField name="values" type="array">
+  Array of data point value records for the requested time range.
+  <Expandable title="properties">
+    <ResponseField name="name" type="string">
+      Display name of the data point.
+    </ResponseField>
+    <ResponseField name="xid" type="string">
+      Export identifier of the data point.
+    </ResponseField>
+    <ResponseField name="type" type="string">
+      Data type of the point (e.g., `NUMERIC`, `BINARY`).
+    </ResponseField>
+    <ResponseField name="formatedValue" type="string">
+      Human-readable formatted value using the point's text renderer.
+    </ResponseField>
+    <ResponseField name="value" type="string">
+      Raw value of the data point.
+    </ResponseField>
+    <ResponseField name="textRenderer" type="object">
+      Text renderer configuration used to format the point's value.
+    </ResponseField>
+    <ResponseField name="chartColour" type="string">
+      Hex colour string used when rendering this point in charts.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**HTTP 200** — Returns chart data for the watch list.
+
+<Tip>
+  Pass the `fromData` and `toData` values as Unix timestamp strings (milliseconds) for the most reliable results across locales and server configurations.
+</Tip>
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/watch-lists/getChartData/WL_PLANT_FLOOR/1712800000000/1712886400000" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "name": "Plant Floor",
+  "xid": "WL_PLANT_FLOOR",
+  "values": [
+    {
+      "name": "Tank Level",
+      "xid": "DP_TANK_LEVEL",
+      "type": "NUMERIC",
+      "formatedValue": "74.2 %",
+      "value": "74.2",
+      "textRenderer": {},
+      "chartColour": "#1f77b4"
+    },
+    {
+      "name": "Pump Speed",
+      "xid": "DP_PUMP_SPEED",
+      "type": "NUMERIC",
+      "formatedValue": "1450 RPM",
+      "value": "1450",
+      "textRenderer": {},
+      "chartColour": "#ff7f0e"
+    }
+  ]
+}
+```

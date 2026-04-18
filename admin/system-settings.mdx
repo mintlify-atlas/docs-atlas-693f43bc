@@ -1,0 +1,176 @@
+---
+title: "Scada-LTS System Settings: Email, Retention, and More"
+description: "Configure Scada-LTS system-wide settings including database maintenance, email server, HTTP settings, UI defaults, and data purge policies."
+---
+
+System Settings is the central administration panel where you control every aspect of Scada-LTS behaviour that applies across the entire installation. The page is divided into independent cards, each covering a different configuration area. Changes you make are tracked per card, and a summary dialog appears before saving so you can review what changed, restore individual sections, or save everything in one shot. Only users with the **Administrator** role can access this page — non-admin users see an access-denied message.
+
+<Note>
+  Navigate to **System → System Settings** from the main menu. The page will only render if your account has the Administrator role.
+</Note>
+
+## Settings categories
+
+<CardGroup cols={2}>
+  <Card title="Email / SMTP" icon="envelope">
+    Configure the outbound mail server used to deliver alarm notifications and test emails.
+  </Card>
+  <Card title="HTTP / Proxy" icon="globe">
+    Set up an outbound HTTP proxy and configure custom response headers for the web server.
+  </Card>
+  <Card title="Data Retention" icon="database">
+    Control how long historical values, events, and reports are kept before automatic purging.
+  </Card>
+  <Card title="Miscellaneous" icon="sliders">
+    UI performance tier, full-screen mode, event caching, work-item reporting, and web resource paths.
+  </Card>
+  <Card title="SMS Domain" icon="message-dots">
+    Set the carrier email-to-SMS gateway domain used for text-message alarm delivery.
+  </Card>
+  <Card title="Chart Aggregation" icon="chart-line">
+    Enable and tune the AmCharts data-aggregation feature to limit the number of values rendered in trend charts.
+  </Card>
+</CardGroup>
+
+---
+
+## Email / SMTP settings
+
+Scada-LTS sends alarm notifications, acknowledgement emails, and other messages through a standard SMTP server. All email-based event handlers rely on this configuration.
+
+| Field | Description |
+|---|---|
+| **Host** | Hostname or IP address of the SMTP server |
+| **Port** | SMTP port (typically 25, 465, or 587) |
+| **From address** | Envelope sender address |
+| **From name** | Display name shown in the "From" field |
+| **Content type** | HTML+Text, HTML only, or plain Text |
+| **Authentication** | Toggle to enable SMTP AUTH; exposes username and password fields |
+| **TLS** | Toggle to require a TLS/STARTTLS connection |
+
+Use the **send test email** button (paper-plane icon in the card header) to dispatch a test message to the currently logged-in user's address after saving.
+
+---
+
+## HTTP server settings
+
+The HTTP settings card controls outbound connectivity from Scada-LTS to the internet — used by HTTP publishers, external integrations, and any REST calls the server makes on your behalf.
+
+| Field | Description |
+|---|---|
+| **Use proxy** | Enables the proxy fields below |
+| **Proxy host** | Hostname or IP of the HTTP/HTTPS proxy |
+| **Proxy port** | Proxy port number |
+| **Proxy username** | Username for authenticated proxies |
+| **Proxy password** | Password for authenticated proxies |
+| **HTTP response headers** | Free-text block of custom headers appended to every HTTP response (e.g. `X-Frame-Options: SAMEORIGIN`) |
+
+---
+
+## Data retention settings
+
+Data retention controls the automatic purge schedule that keeps the database from growing without bound. Purges run on a background schedule; you can also trigger an immediate purge manually.
+
+| Field | Unit options | Description |
+|---|---|---|
+| **Event purge period** | Days / Weeks / Months / Years | How long system and audit events are retained |
+| **Report purge period** | Days / Weeks / Months / Years | How long generated report instances are stored |
+| **Future date limit** | Minutes / Hours | Maximum timestamp offset allowed for incoming data points |
+| **Values limit for purge** | Count | Maximum number of historical values processed per purge cycle |
+
+Two action buttons appear in the card header:
+
+- **Purge now** (`mdi-delete-sweep`) — applies the current retention rules immediately and removes data outside the configured windows.
+- **Purge all data** (`mdi-delete`) — deletes **all** historical point values regardless of retention period. A confirmation dialog is shown before the operation runs.
+
+<Warning>
+  **Purge all data** is irreversible. All historical point values will be permanently deleted. Back up your database before using this action in a production system.
+</Warning>
+
+---
+
+## Miscellaneous / UI settings
+
+The Miscellaneous card groups settings that affect runtime behaviour and UI performance.
+
+<AccordionGroup>
+  <Accordion title="UI Performance">
+    Controls the refresh interval for live-data displays. Options map to millisecond polling intervals:
+
+    | Label | Interval |
+    |---|---|
+    | Very High | 1 000 ms |
+    | High | 2 000 ms |
+    | Medium | 5 000 ms |
+    | Low | 10 000 ms |
+
+    Lower intervals increase server load; choose the lowest tier your infrastructure can sustain.
+  </Accordion>
+
+  <Accordion title="Data point runtime value synchronization">
+    Determines which in-memory point values are synchronized to the persistent store between database writes. Values: `NONE`, `PARTIAL`, `ALL`.
+  </Accordion>
+
+  <Accordion title="Full-screen mode">
+    - **View force full-screen enabled** — graphical views open in forced full-screen mode automatically.
+    - **Hide shortcut to disable full-screen** — hides the UI shortcut that lets operators exit full-screen, useful for kiosk deployments.
+  </Accordion>
+
+  <Accordion title="Event pending cache">
+    - **Event pending cache enabled** — caches unacknowledged events in memory for faster rendering in the alarm panel.
+    - **Event pending limit** — maximum number of events held in the cache. Excess events are fetched from the database on demand.
+  </Accordion>
+
+  <Accordion title="Work items reporting">
+    Enables internal metrics for the work-item queue, useful for diagnosing throughput issues. A secondary switch enables a per-second rate limit on reported items.
+  </Accordion>
+
+  <Accordion title="Web resource paths">
+    - **Graphics path** — file system path to the `graphics` folder (must end in `graphics`).
+    - **Uploads path** — file system path to the `uploads` folder (must end in `uploads`).
+    Both paths are validated before saving; incorrect values will prevent the form from submitting.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## SMS domain settings
+
+To deliver alarm notifications via SMS using a carrier's email-to-SMS gateway, enter the domain in the **SMS Domain** field. For example, using `txt.att.net` will send messages to `+1XXXXXXXXXX@txt.att.net`. Consult your carrier's documentation for the correct gateway domain.
+
+---
+
+## Chart aggregation (AmCharts)
+
+When trend charts display very large datasets, enabling aggregation reduces the number of data points rendered, improving browser performance.
+
+| Field | Description |
+|---|---|
+| **Enabled** | Toggle to activate chart-level aggregation |
+| **Values limit** | Maximum raw values passed to the chart before aggregation is applied |
+| **Limit factor** | Multiplier that adjusts the aggregation bucket size relative to the values limit |
+
+---
+
+## How to save changes
+
+Scada-LTS tracks which cards you have modified. When any unsaved change exists, a floating **Save** button appears in the top-right corner of the page.
+
+<Steps>
+  <Step title="Open System Settings">
+    Navigate to **System → System Settings**. The page requires Administrator access.
+  </Step>
+  <Step title="Edit one or more cards">
+    Modify fields in any card. An asterisk (`*`) appears in the card title to indicate unsaved changes.
+  </Step>
+  <Step title="Click the Save button">
+    Click the floating save icon. A summary dialog appears listing every change with original and new values shown in red and green.
+  </Step>
+  <Step title="Review and confirm">
+    In the summary dialog you can save individual sections, restore them, or click **Save all** to commit every pending change at once.
+  </Step>
+</Steps>
+
+<Tip>
+  You can restore individual cards to their last saved state by clicking the undo icon next to that card in the summary dialog — without affecting other cards you have edited.
+</Tip>

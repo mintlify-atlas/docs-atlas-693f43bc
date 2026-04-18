@@ -1,0 +1,184 @@
+---
+title: "Alarms and Events: Monitoring Conditions in Scada-LTS"
+description: "Scada-LTS generates events when data points breach thresholds or system conditions occur. Configure alarm levels, event handlers, and notifications."
+---
+
+Alarms and events are how Scada-LTS tells operators and automated systems that something requires attention. An **event** is a structured record generated when a monitored condition becomes true — a temperature crossing a high limit, a communication failure, or a scheduled maintenance window opening. Each event carries a severity level, a timestamp, and a reference to the condition that triggered it. When an event's severity is above `NONE`, it is also treated as an **alarm** that appears in the alarm console and must be acknowledged by an operator.
+
+## Event types
+
+Scada-LTS produces four categories of events, each with its own source and lifecycle:
+
+<AccordionGroup>
+  <Accordion title="Data point events">
+    Raised by **point event detectors** attached to individual data points. Each detector watches the incoming value stream and fires when a condition is met — for example, when a numeric value exceeds a high limit or when a binary point has been in its alarm state for more than 30 seconds.
+
+    Detector types include: Analog High Limit, Analog Low Limit, Binary State, Multistate State, Alphanumeric State, Point Change, State Change Count, No Change, No Update, Positive CUSUM, and Negative CUSUM. See [Data Points](/concepts/data-points) for the full matrix of detector types and applicable data types.
+  </Accordion>
+
+  <Accordion title="Data source events">
+    Raised by a data source driver when communication with the external device fails or recovers. Typical events include `POLL_ABORTED` (a polling cycle did not complete in time) and `DATA_SOURCE_EXCEPTION` (an unhandled error occurred in the driver). Each event type can be assigned a separate alarm level in the data source configuration (`DataSourceVO.java:421`).
+  </Accordion>
+
+  <Accordion title="System events">
+    Raised by the Scada-LTS platform itself for infrastructure-level conditions — for example, when the backing database becomes unavailable, when a license limit is approached, or when a scheduled purge job fails. System events are configured in the System Settings page.
+  </Accordion>
+
+  <Accordion title="Audit events">
+    Generated automatically whenever a user creates, updates, or deletes a configuration object (data source, data point, event handler, graphical view, etc.). Audit events are always logged at the `INFORMATION` level and cannot be suppressed. They provide a tamper-evident change trail for regulatory compliance.
+  </Accordion>
+
+  <Accordion title="Scheduled events">
+    Defined by `ScheduledEventVO` — these fire on a calendar schedule (once, hourly, daily, weekly, monthly, or yearly) and can be used to drive automated workflows or maintenance reminders.
+  </Accordion>
+
+  <Accordion title="Maintenance events">
+    Defined by `MaintenanceEventVO` — these represent planned maintenance windows during which alarms from selected data sources are suppressed so that operators are not flooded with false alarms during scheduled downtime.
+  </Accordion>
+</AccordionGroup>
+
+## Alarm levels
+
+Every event has an alarm level that reflects its operational severity. The five levels are defined in `AlarmLevels.java:26`:
+
+| Level | Code | Numeric | Typical use |
+|-------|------|---------|-------------|
+| **None** | `NONE` | 0 | Informational; appears in logs only |
+| **Information** | `INFORMATION` | 1 | Normal operating conditions worth noting |
+| **Urgent** | `URGENT` | 2 | Condition requires prompt operator attention |
+| **Critical** | `CRITICAL` | 3 | Significant process deviation; escalate immediately |
+| **Life Safety** | `LIFE_SAFETY` | 4 | Hazardous condition; highest priority |
+
+<Note>
+  Events with level `NONE` do not appear in the alarm console and do not require acknowledgement. They are still persisted to the event log and visible in reports.
+</Note>
+
+Alarm levels can be overridden per event type. For example, a `POLL_ABORTED` event might be `URGENT` by default but downgraded to `INFORMATION` for a non-critical data source.
+
+## Event detectors
+
+Event detectors are attached to individual data points and define exactly what condition constitutes an alarm. Each detector has:
+
+- A **detector type** (e.g. `HIGH_LIMIT`, `LOW_LIMIT`, `BINARY_STATE`)
+- A **limit** or **state** value to compare against
+- An optional **duration** — the condition must persist for this long before the event fires (prevents transient spikes from generating noise)
+- An **alarm level** (`PointEventDetectorVO.java:120`)
+- An optional **alias** for display in the alarm console
+
+Duration is expressed in seconds, minutes, hours, or days. A detector with `duration = 0` fires immediately when the condition becomes true.
+
+## Event handlers
+
+Event handlers execute an action when an event becomes active or inactive. Multiple handlers can be attached to the same event type, and one handler can be attached to multiple event types (`EventHandlerVO.java:68`).
+
+<Tabs>
+  <Tab title="Email">
+    Sends an email to one or more recipients when the event becomes active. Supports:
+
+    - **Active recipients** — notified immediately when the event fires
+    - **Escalation** — a second list of recipients notified if the event is still active after a configurable delay (e.g. 15 minutes)
+    - **Inactive notification** — an optional email sent when the condition clears, either to the active recipients or to a separate inactive list
+
+    Recipients can be individual email addresses, registered Scada-LTS users, or named mailing lists (`EventHandlerVO.java:138`).
+
+    ```json
+    {
+      "xid": "EH_HIGH_TEMP_EMAIL",
+      "handlerType": "EMAIL",
+      "activeRecipients": [
+        { "recipientType": "MAILING_LIST", "referenceId": 3 }
+      ],
+      "sendEscalation": true,
+      "escalationDelayType": "MINUTES",
+      "escalationDelay": 15,
+      "escalationRecipients": [
+        { "recipientType": "USER", "referenceId": 1 }
+      ],
+      "sendInactive": true
+    }
+    ```
+  </Tab>
+  <Tab title="SMS">
+    Sends an SMS message via an email-to-SMS gateway. Configured identically to an email handler (`TYPE_SMS = 5`) but routes the message through the SMS gateway address stored in the recipient list (`EventHandlerVO.java:76`).
+  </Tab>
+  <Tab title="Set Point">
+    Automatically writes a value to a target data point when the event becomes active or inactive. This enables automated interlock logic — for example, closing a valve (setting a binary point to `false`) when a high-pressure alarm fires.
+
+    Three action modes are available for both the active and inactive transitions (`EventHandlerVO.java:105`):
+
+    | Action | Behaviour |
+    |--------|-----------|
+    | `NONE` | Take no action for this transition |
+    | `STATIC_VALUE` | Write a fixed literal value to the target point |
+    | `POINT_VALUE` | Copy the current value from another data point |
+
+    ```json
+    {
+      "handlerType": "SET_POINT",
+      "targetPointId": "DP_VALVE_01",
+      "activeAction": "STATIC_VALUE",
+      "activeValueToSet": "false",
+      "inactiveAction": "STATIC_VALUE",
+      "inactiveValueToSet": "true"
+    }
+    ```
+  </Tab>
+  <Tab title="Process">
+    Executes a shell command on the Scada-LTS host when the event becomes active or inactive. Separate commands can be configured for each transition (`EventHandlerVO.java:148`).
+
+    ```json
+    {
+      "handlerType": "PROCESS",
+      "activeProcessCommand": "/opt/scripts/send-alert.sh HIGH_PRESSURE",
+      "inactiveProcessCommand": "/opt/scripts/send-alert.sh PRESSURE_NORMAL"
+    }
+    ```
+
+    <Warning>
+      Process handlers run with the same OS user account as the Scada-LTS application server. Restrict the commands and ensure the scripts are not world-writable.
+    </Warning>
+  </Tab>
+  <Tab title="Script">
+    Executes a stored server-side JavaScript (`ScriptVO`) when the event transitions. Scripts have access to the full Scada-LTS scripting API, including the ability to read and write data points and call external services (`EventHandlerVO.java:75`).
+  </Tab>
+</Tabs>
+
+## Acknowledging alarms
+
+An alarm remains **active** as long as its triggering condition is true. Once the condition clears, the alarm transitions to **returned to normal** (RTN) but may still require acknowledgement depending on the detector configuration.
+
+An operator acknowledges an alarm by clicking the acknowledge button in the alarm console. Acknowledging marks the alarm as seen and removes it from the unacknowledged count displayed in the top navigation bar. Acknowledgements are recorded with the operator's username and a timestamp.
+
+<Steps>
+  <Step title="View active alarms">
+    Open the **Alarm Console** from the main navigation. Active alarms are listed newest-first, colour-coded by severity level (red for Critical/Life Safety, orange for Urgent, blue for Information).
+  </Step>
+  <Step title="Review the alarm detail">
+    Click an alarm row to expand the detail panel. It shows the event description, the data point or data source that triggered it, the time it became active, and any operator comments.
+  </Step>
+  <Step title="Acknowledge the alarm">
+    Click **Acknowledge** to mark the alarm as reviewed. If the condition has already cleared, the alarm is removed from the active list. If the condition is still active, the alarm remains visible but no longer appears in the unacknowledged count.
+  </Step>
+  <Step title="Add a comment (optional)">
+    Before or after acknowledging, you can add a free-text comment to the alarm record. Comments are visible to all operators and are included in alarm reports.
+  </Step>
+</Steps>
+
+<Info>
+  The `LIFE_SAFETY` level is designed for safety-instrumented systems. Consider integrating it with a dedicated SIS or annunciator panel rather than relying solely on software acknowledgement.
+</Info>
+
+<CardGroup cols={2}>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Configure event detectors on individual measurements and signals.
+  </Card>
+  <Card title="Data Sources" icon="database" href="/concepts/data-sources">
+    Set communication failure alarm levels on data source drivers.
+  </Card>
+  <Card title="Graphical Views" icon="display" href="/concepts/graphical-views">
+    Embed alarm list components directly in your process diagrams.
+  </Card>
+  <Card title="User Management" icon="users" href="/guide/user-management">
+    Create reusable recipient groups for email and SMS event handlers.
+  </Card>
+</CardGroup>

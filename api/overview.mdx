@@ -1,0 +1,101 @@
+---
+title: "Scada-LTS REST API: Overview, Auth, and Error Codes"
+description: "The Scada-LTS REST API provides programmatic access to data points, data sources, events, views, and system configuration using JSON over HTTP."
+---
+
+The Scada-LTS REST API lets you read and write SCADA data from any HTTP client. You can retrieve data point values, manage data sources, query events, control graphical views, and configure system settings — all without touching the web UI. The API follows standard REST conventions and returns JSON for every response.
+
+## Base URL
+
+All API endpoints are relative to the following base URL:
+
+```
+http://{host}:8080/Scada-LTS/api
+```
+
+Replace `{host}` with the hostname or IP address of your Scada-LTS server. For local development, use `localhost`.
+
+## API version
+
+The current API version is **2.6.0**, as defined in `ScadaLTS_API_OAS3.yaml`.
+
+## Content type
+
+All request and response bodies use `application/json`. Set the `Content-Type: application/json` header on any request that includes a body.
+
+## Authentication
+
+The API uses **session-based authentication**. Before calling any protected endpoint, you must authenticate using the `/api/auth/{username}/{password}` endpoint. The server returns a session cookie that you include in all subsequent requests. See [Authentication](/api/authentication) for the full flow with curl examples.
+
+## Available API groups
+
+<CardGroup cols={2}>
+  <Card title="Authentication API" icon="lock" href="/api/authentication">
+    Log in, log out, and check session status for Scada-LTS user accounts.
+  </Card>
+  <Card title="Data Point API" icon="circle-dot" href="/api/data-points">
+    Retrieve and manage individual data points by ID or XID.
+  </Card>
+  <Card title="Data Source API" icon="plug" href="/api/data-sources">
+    List, enable, and configure data sources connected to Scada-LTS.
+  </Card>
+  <Card title="Events API" icon="bell" href="/api/events">
+    Query active and historical events and alarm records.
+  </Card>
+  <Card title="View API" icon="display" href="/api/views">
+    Create and manage graphical SCADA views.
+  </Card>
+  <Card title="Point Hierarchy API" icon="sitemap" href="/api/users">
+    Browse and modify the folder-based point hierarchy structure.
+  </Card>
+  <Card title="Watch List API" icon="list-check" href="/api/watch-lists">
+    Read and update named watch lists of monitored data points.
+  </Card>
+  <Card title="User Profiles API" icon="id-card" href="/api/users">
+    Manage user profile templates and their permission sets.
+  </Card>
+  <Card title="Users API" icon="user" href="/api/users">
+    Create, update, and delete Scada-LTS user accounts.
+  </Card>
+  <Card title="System Settings API" icon="gear" href="/api/system-settings">
+    Read and write system-wide configuration settings.
+  </Card>
+  <Card title="Point Value API" icon="chart-line" href="/api/point-values">
+    Read current values and historical time-series data for data points.
+  </Card>
+  <Card title="Synoptic Panel API" icon="table-cells" href="/api/watch-lists">
+    Manage synoptic panel layouts used in the Vue.js UI.
+  </Card>
+</CardGroup>
+
+## OpenAPI specification
+
+The full API is described in [`ScadaLTS_API_OAS3.yaml`](https://github.com/SCADA-LTS/Scada-LTS/blob/develop/doc/RESTAPI/ScadaLTS_API_OAS3.yaml) using OpenAPI 3.0. You can import this file into [Swagger Editor](https://editor.swagger.io/) or [Postman](https://www.postman.com/) to browse every endpoint, view example request and response bodies, and send live requests against your Scada-LTS instance.
+
+<Tip>
+  In Postman, use **File → Import** and select the YAML file. Postman will generate a collection with all endpoints pre-configured, including path and query parameters.
+</Tip>
+
+## Error handling
+
+The API uses standard HTTP status codes to indicate success or failure.
+
+| Status code | Meaning |
+|-------------|---------|
+| `200 OK` | Request succeeded. Response body contains the result. |
+| `400 Bad Request` | The request was malformed or missing required parameters. |
+| `401 Unauthorized` | No valid session. Authenticate first and include the session cookie. |
+| `403 Forbidden` | The authenticated user does not have permission for this operation. |
+| `404 Not Found` | The requested resource (data point, data source, etc.) does not exist. |
+| `500 Internal Server Error` | An unexpected error occurred on the server. |
+
+<Note>
+  Sessions expire after a period of inactivity. If you receive a `401` response on a previously working request, re-authenticate using `/api/auth/{username}/{password}` to obtain a fresh session cookie.
+</Note>
+
+## Interactive testing
+
+The fastest way to explore the API interactively is to import `ScadaLTS_API_OAS3.yaml` into one of these tools:
+
+- **Swagger Editor** — paste the file contents at [editor.swagger.io](https://editor.swagger.io/) for an inline try-it-out UI.
+- **Postman** — import the YAML file to generate a full request collection. Set a `baseUrl` variable to your Scada-LTS host and add a cookie jar to persist your session after login.

@@ -1,0 +1,99 @@
+---
+title: "Using Synoptic Panels for SVG Process Visualization"
+description: "Synoptic panels in Scada-LTS provide SVG-based process visualizations with live data overlays. Create custom industrial diagrams linked to real data."
+---
+
+Synoptic panels are custom SVG-based screens that display the current state of your process at a glance. Unlike graphical views — which use a canvas of pre-built widgets — synoptic panels accept any SVG file you design in an external editor such as Inkscape. Once uploaded, individual SVG elements are bound to data points, and the panel updates automatically via WebSocket whenever a bound point value changes.
+
+## Synoptic panels vs. graphical views
+
+| Feature | Synoptic Panel | Graphical View |
+|---------|---------------|---------------|
+| Source format | Custom SVG file | Built-in widget canvas |
+| Editing tool | External SVG editor + Scada-LTS binding | Scada-LTS graphical editor |
+| Update mechanism | WebSocket push | Configurable interval |
+| Custom logic | Custom Vue.js components | Standard widget set |
+
+Synoptic panels are the better choice when you already have process diagrams in a vector format, or when you need a highly specific layout that cannot be achieved with the standard widget palette.
+
+## How synoptic panels work
+
+Each panel stores a `name`, a unique `xid`, the raw SVG markup (`vectorImage`), and a `componentData` map that pairs SVG element IDs with their bound data point XIDs and display settings. When the panel loads, Scada-LTS parses the SVG for elements whose `id` attribute matches the `SLTS_<type>_<id>` naming convention, then subscribes to the corresponding data point topics over WebSocket. Any value change on the server triggers an immediate update to the matching element on screen — no polling required.
+
+## Built-in component types
+
+Five component types are supported out of the box. Each is identified by a prefix in the SVG element's `id`:
+
+| Component | ID prefix | Behaviour |
+|-----------|-----------|-----------|
+| Fan | `SLTS_fan_` | Rotates the element; background changes colour |
+| Valve | `SLTS_valve_` | Left and right background elements change colour; shows ON/OFF for boolean values |
+| Water level | `SLTS_waterlevel_` | Animates a filled rectangle to reflect a numeric level |
+| Point | `SLTS_point_` | Displays the current value and an optional label |
+| State | `SLTS_state_` | Changes background colour and shows a configurable state label |
+
+Each component type supports optional sub-elements that follow a consistent suffix convention: `_background`, `_value`, and `_label`. Only the main element (e.g. `SLTS_fan_1`) is required; the sub-elements are optional enhancements.
+
+## Creating your first synoptic panel
+
+<Steps>
+  <Step title="Design the SVG in an external editor">
+    Open Inkscape (or any SVG editor) and draw your process diagram. For each element you want to bind to a data point, set its `id` to the appropriate `SLTS_<type>_<number>` pattern. For example, a valve called valve number 3 should have `id="SLTS_valve_3"`. Export the file as plain SVG.
+  </Step>
+  <Step title="Open the Synoptic Panel page">
+    Navigate to **Synoptic Panel** in the main menu. The toolbar contains a **+** button to create a new panel.
+  </Step>
+  <Step title="Fill in the panel details">
+    In the creation dialog enter a **Name** and verify the auto-generated **XID**. Then click the file input labelled **Upload SVG file** and select the `.svg` file you prepared. Only `image/svg+xml` files are accepted.
+  </Step>
+  <Step title="Save the panel">
+    Click **Create**. The panel is stored in the database and appears in the panel selector drop-down. Scada-LTS navigates to the new panel immediately.
+  </Step>
+  <Step title="Bind SVG elements to data points">
+    With the new panel displayed, click the **pencil** (edit) button in the toolbar to open the element editor. Each SVG element whose `id` matches the `SLTS_` prefix is listed. For each one, select the data point XID you want to bind it to and configure any display options (e.g. custom label text).
+  </Step>
+  <Step title="Save the bindings">
+    Click **Save** in the editor dialog. The `componentData` map is persisted and WebSocket subscriptions are established for all bound points. The panel is now live.
+  </Step>
+</Steps>
+
+<Tip>
+  Prepare your SVG in Inkscape with the **XML editor** open (`Ctrl+Shift+X`) so you can set element IDs precisely. Group related sub-elements (background, value text, label text) under a single parent `<g>` element with the main `SLTS_` ID to keep the file structure clean.
+</Tip>
+
+## Managing multiple panels
+
+All saved panels are listed in the selector drop-down in the page header. Switching between panels updates the URL to `/synoptic-panel/{id}` and re-renders the canvas. The **pencil** and **minus** toolbar buttons apply to the currently active panel only. Deleting a panel requires confirmation and cannot be undone.
+
+## SVG element ID naming rules
+
+```
+# Main element (required)
+SLTS_<type>_<id>
+
+# Optional sub-elements
+SLTS_<type>_<id>_background       # element whose fill colour changes
+SLTS_<type>_<id>_background_left  # valve: left side colour (valve type only)
+SLTS_<type>_<id>_background_right # valve: right side colour (valve type only)
+SLTS_<type>_<id>_value            # text element showing the current value
+SLTS_<type>_<id>_label            # text element showing a label or state name
+```
+
+Replace `<type>` with `fan`, `valve`, `waterlevel`, `point`, or `state`, and `<id>` with any integer that is unique within that type on the panel.
+
+## Custom components
+
+If the built-in component types do not meet your requirements, you can write a custom Vue.js component that extends `CustomComponentsBase.vue`. The base class provides helper methods for reading point values by XID (`getDataPointValueXid`), changing element colours (`changeComponentColor`), updating text elements (`changeComponentText`), and animating rotation (`rotateComponent`). Once written, register the component in `CustomComponentsMixin.js`, rebuild the front-end assets, and deploy.
+
+<Note>
+  Custom components require a front-end rebuild and redeployment. This is a developer task. End users interact with custom components in exactly the same way as built-in ones — by selecting a bound data point in the element editor.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Watch Lists" icon="list-check" href="/guide/watchlist">
+    Monitor live values in a table view alongside a trend chart.
+  </Card>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Configure the data points that synoptic panel components bind to.
+  </Card>
+</CardGroup>

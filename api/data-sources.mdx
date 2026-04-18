@@ -1,0 +1,104 @@
+---
+title: "REST API: Data Sources — List and Retrieve by XID or ID"
+description: "REST API endpoints for listing and retrieving Scada-LTS data sources by ID or XID. Part of the DataSourceAPI group in the Scada-LTS REST API."
+---
+
+The Data Sources API lets you inspect the data sources configured in your Scada-LTS instance. A data source represents a connection to an external device or protocol (such as Modbus, BACnet, or HTTP). These endpoints are read-only and return identifier and status information that you can use to build further queries against data points or values.
+
+All endpoints are served under the base URL `http://<host>:8080/Scada-LTS/api` and require HTTP Basic authentication.
+
+<Note>
+  The primary authentication method is session cookies — see [Authentication](/api/authentication) for the full flow. The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing.
+</Note>
+
+---
+
+## GET /api/datasource
+
+Retrieve a single data source by its export identifier (XID). The XID is a human-readable string assigned when the data source is created, such as `DS_MODBUS_01`.
+
+<ParamField query="xid" type="string" required>
+  The export identifier (XID) of the data source to retrieve.
+</ParamField>
+
+### Response
+
+Returns a JSON object describing the data source.
+
+<ResponseField name="id" type="number">
+  The internal numeric identifier for the data source.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  The export identifier (XID) for the data source.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The human-readable display name of the data source.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean">
+  Whether the data source is currently enabled and polling.
+</ResponseField>
+
+**HTTP 200** — Returns the data source object on success.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datasource?xid=DS_MODBUS_01" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "id": 3,
+  "xid": "DS_MODBUS_01",
+  "name": "Modbus TCP Device",
+  "enabled": true
+}
+```
+
+---
+
+## GET /api/datasource/getAll
+
+List all data source identifiers registered in the system. This endpoint returns a lightweight summary of every data source — suitable for building dropdowns, lookups, or further queries by ID.
+
+### Response
+
+Returns a JSON array of identifier objects.
+
+<ResponseField name="id" type="number">
+  The internal numeric identifier of the data source.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  The export identifier (XID) of the data source.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The display name of the data source.
+</ResponseField>
+
+**HTTP 200** — Returns an array of data source identifier objects on success.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/datasource/getAll" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 1,
+    "xid": "DS_VIRTUAL_01",
+    "name": "Virtual Data Source"
+  },
+  {
+    "id": 3,
+    "xid": "DS_MODBUS_01",
+    "name": "Modbus TCP Device"
+  }
+]
+```

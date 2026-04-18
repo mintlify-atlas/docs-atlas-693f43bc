@@ -1,0 +1,790 @@
+---
+title: "REST API: User Accounts and Permission Profile Endpoints"
+description: "Manage Scada-LTS user accounts and permission profiles via REST API. List, create, update, and delete users, profiles, and passwords."
+---
+
+The Users and Profiles API lets you manage user accounts and permission profiles in Scada-LTS programmatically. User profiles group a set of access permissions — covering data sources, data points, views, and watch lists — that can be assigned to one or more users. The UsersAPI handles individual accounts including creation, update, deletion, and password management, while the UserProfilesAPI manages the reusable permission templates applied to those accounts.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require an active session. See [Authentication](/api/authentication) for the login flow.
+
+<Note>
+  The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing. In production, use the session cookie obtained from `/api/auth/{username}/{password}`.
+</Note>
+
+---
+
+## GET /api/userProfiles/
+
+List all user profiles registered in the system. Returns lightweight identifier objects suitable for building selection lists or profile lookups.
+
+### Response
+
+Returns a JSON array of profile identifier objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier of the user profile.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) for the user profile.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable display name of the profile.
+</ResponseField>
+
+**HTTP 200** — Returns an array of profile identifier objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/userProfiles/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  { "id": 1, "xid": "UP_OPERATOR", "name": "Operator" },
+  { "id": 2, "xid": "UP_ENGINEER", "name": "Engineer" }
+]
+```
+
+---
+
+## POST /api/userProfiles/
+
+Create a new user profile. Supply a `UserProfileVO` object in the request body. The response returns the newly created profile including its assigned ID.
+
+### Request body
+
+<ParamField body="id" type="number">
+  Leave as `0` or omit when creating; the server assigns the ID.
+</ParamField>
+
+<ParamField body="xid" type="string">
+  Export identifier for the profile. Use `GET /api/userProfiles/generateXid` to obtain a unique value.
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Display name for the profile.
+</ParamField>
+
+<ParamField body="dataSourcePermissions" type="array">
+  Array of data source IDs this profile can access.
+</ParamField>
+
+<ParamField body="dataPointPermissions" type="array">
+  Array of data point permission objects.
+  <Expandable title="properties">
+    <ParamField body="dataPointId" type="number">
+      Internal ID of the data point.
+    </ParamField>
+    <ParamField body="permission" type="number">
+      Permission level: `1` = read, `2` = set (read + write).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="watchlistPermissions" type="array">
+  Array of watch list permission objects.
+  <Expandable title="properties">
+    <ParamField body="id" type="number">
+      Internal ID of the watch list.
+    </ParamField>
+    <ParamField body="permission" type="number">
+      Permission level for this watch list.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="viewPermissions" type="array">
+  Array of view permission objects.
+  <Expandable title="properties">
+    <ParamField body="id" type="number">
+      Internal ID of the view.
+    </ParamField>
+    <ParamField body="permission" type="number">
+      Permission level for this view.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+Returns the created `UserProfileVO` object.
+
+<ResponseField name="id" type="number">
+  Server-assigned numeric ID of the new profile.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier of the profile.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the profile.
+</ResponseField>
+
+<ResponseField name="dataSourcePermissions" type="array">
+  List of data source IDs granted to this profile.
+</ResponseField>
+
+<ResponseField name="dataPointPermissions" type="array">
+  List of data point permission objects associated with this profile.
+</ResponseField>
+
+<ResponseField name="watchlistPermissions" type="array">
+  List of watch list permission objects associated with this profile.
+</ResponseField>
+
+<ResponseField name="viewPermissions" type="array">
+  List of view permission objects associated with this profile.
+</ResponseField>
+
+**HTTP 200** — Returns the created profile object.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/userProfiles/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "xid": "UP_TECHNICIAN",
+    "name": "Technician",
+    "dataSourcePermissions": [1, 3],
+    "dataPointPermissions": [
+      { "dataPointId": 10, "permission": 1 },
+      { "dataPointId": 11, "permission": 2 }
+    ],
+    "watchlistPermissions": [],
+    "viewPermissions": [{ "id": 2, "permission": 1 }]
+  }'
+```
+
+```json
+{
+  "id": 5,
+  "xid": "UP_TECHNICIAN",
+  "name": "Technician",
+  "dataSourcePermissions": [1, 3],
+  "dataPointPermissions": [
+    { "dataPointId": 10, "permission": 1 },
+    { "dataPointId": 11, "permission": 2 }
+  ],
+  "watchlistPermissions": [],
+  "viewPermissions": [{ "id": 2, "permission": 1 }]
+}
+```
+
+---
+
+## PUT /api/userProfiles/
+
+Update an existing user profile. The request body must include the profile's `id` field to identify which record to update. All permission arrays are replaced in full — include every permission you want to retain.
+
+### Request body
+
+The request body follows the same `UserProfileVO` schema as the POST endpoint. Include the `id` of the profile to update.
+
+<ParamField body="id" type="number" required>
+  Numeric ID of the profile to update.
+</ParamField>
+
+<ParamField body="xid" type="string">
+  Export identifier for the profile.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Updated display name for the profile.
+</ParamField>
+
+<ParamField body="dataSourcePermissions" type="array">
+  Replacement list of data source IDs. Overwrites the existing list entirely.
+</ParamField>
+
+<ParamField body="dataPointPermissions" type="array">
+  Replacement list of data point permission objects.
+</ParamField>
+
+<ParamField body="watchlistPermissions" type="array">
+  Replacement list of watch list permission objects.
+</ParamField>
+
+<ParamField body="viewPermissions" type="array">
+  Replacement list of view permission objects.
+</ParamField>
+
+### Response
+
+Returns the updated `UserProfileVO` object.
+
+**HTTP 200** — Returns the updated profile.
+
+```bash
+curl -X PUT \
+  "http://localhost:8080/Scada-LTS/api/userProfiles/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 5,
+    "xid": "UP_TECHNICIAN",
+    "name": "Senior Technician",
+    "dataSourcePermissions": [1, 2, 3],
+    "dataPointPermissions": [
+      { "dataPointId": 10, "permission": 2 }
+    ],
+    "watchlistPermissions": [],
+    "viewPermissions": [{ "id": 2, "permission": 1 }]
+  }'
+```
+
+---
+
+## GET /api/userProfiles/{id}
+
+Retrieve the full details of a single user profile by its numeric ID. Returns the complete `UserProfileVO` including all permission arrays.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the user profile to retrieve.
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="number">
+  Numeric ID of the profile.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier of the profile.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the profile.
+</ResponseField>
+
+<ResponseField name="dataSourcePermissions" type="array">
+  Data source IDs this profile can access.
+</ResponseField>
+
+<ResponseField name="dataPointPermissions" type="array">
+  Data point permission entries for this profile.
+  <Expandable title="properties">
+    <ResponseField name="dataPointId" type="number">
+      Internal ID of the data point.
+    </ResponseField>
+    <ResponseField name="permission" type="number">
+      Permission level (`1` = read, `2` = read+write).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="watchlistPermissions" type="array">
+  Watch list permission entries for this profile.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">
+      Internal ID of the watch list.
+    </ResponseField>
+    <ResponseField name="permission" type="number">
+      Permission level for this watch list.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="viewPermissions" type="array">
+  View permission entries for this profile.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">
+      Internal ID of the view.
+    </ResponseField>
+    <ResponseField name="permission" type="number">
+      Permission level for this view.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**HTTP 200** — Returns the profile object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/userProfiles/5" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "id": 5,
+  "xid": "UP_TECHNICIAN",
+  "name": "Senior Technician",
+  "dataSourcePermissions": [1, 2, 3],
+  "dataPointPermissions": [
+    { "dataPointId": 10, "permission": 2 }
+  ],
+  "watchlistPermissions": [],
+  "viewPermissions": [{ "id": 2, "permission": 1 }]
+}
+```
+
+---
+
+## DELETE /api/userProfiles/{id}
+
+Delete a user profile by its numeric ID. Users previously assigned to this profile will lose any permissions that were granted through it.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the user profile to delete.
+</ParamField>
+
+### Response
+
+<ResponseField name="" type="number">
+  Returns the ID of the deleted profile on success.
+</ResponseField>
+
+**HTTP 200** — Returns the deleted profile's ID.
+
+<Warning>
+  Deleting a profile does not delete the users assigned to it, but those users will immediately lose the permissions the profile provided.
+</Warning>
+
+```bash
+curl -X DELETE \
+  "http://localhost:8080/Scada-LTS/api/userProfiles/5" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+5
+```
+
+---
+
+## GET /api/userProfiles/generateXid
+
+Generate a new unique export identifier (XID) for use when creating a user profile. Call this endpoint first to obtain a valid XID, then pass it in the `xid` field of your POST request body.
+
+### Response
+
+<ResponseField name="" type="string">
+  A unique XID string for a new user profile, such as `UP_000001`.
+</ResponseField>
+
+**HTTP 200** — Returns the generated XID as a plain JSON string.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/userProfiles/generateXid" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+"UP_000003"
+```
+
+---
+
+## GET /api/users/
+
+List all users in the system. Returns a lightweight summary array with basic account information — use `GET /api/users/{id}` to retrieve full details for a specific user.
+
+### Response
+
+Returns an array of `JsonUserInfo` objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric ID of the user.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Login username for the account.
+</ResponseField>
+
+<ResponseField name="firstName" type="string">
+  User's first name.
+</ResponseField>
+
+<ResponseField name="lastName" type="string">
+  User's last name.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address of the user.
+</ResponseField>
+
+<ResponseField name="phone" type="string">
+  Phone number of the user.
+</ResponseField>
+
+<ResponseField name="admin" type="boolean">
+  Whether the user has administrator privileges.
+</ResponseField>
+
+<ResponseField name="disabled" type="boolean">
+  Whether the account is currently disabled.
+</ResponseField>
+
+**HTTP 200** — Returns an array of user info objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/users/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "firstName": "System",
+    "lastName": "Administrator",
+    "email": "admin@example.com",
+    "phone": "",
+    "admin": true,
+    "disabled": false
+  },
+  {
+    "id": 2,
+    "username": "jsmith",
+    "firstName": "John",
+    "lastName": "Smith",
+    "email": "jsmith@example.com",
+    "phone": "+1-555-0100",
+    "admin": false,
+    "disabled": false
+  }
+]
+```
+
+---
+
+## POST /api/users/
+
+Create a new user account. The request body must include a password. The response returns the full list of users after the new account is created.
+
+### Request body
+
+<ParamField body="username" type="string" required>
+  Login username for the new account. Must be unique.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password for the new account.
+</ParamField>
+
+<ParamField body="firstName" type="string">
+  User's first name.
+</ParamField>
+
+<ParamField body="lastName" type="string">
+  User's last name.
+</ParamField>
+
+<ParamField body="email" type="string">
+  Email address for alarm notifications and communication.
+</ParamField>
+
+<ParamField body="phone" type="string">
+  Phone number for the user.
+</ParamField>
+
+<ParamField body="admin" type="boolean">
+  Set to `true` to grant administrator privileges.
+</ParamField>
+
+<ParamField body="disabled" type="boolean">
+  Set to `true` to create the account in a disabled state.
+</ParamField>
+
+<ParamField body="homeUrl" type="string">
+  URL the user is redirected to after login.
+</ParamField>
+
+<ParamField body="receiveAlarmEmails" type="number">
+  Alarm email threshold level. `0` = none, higher values map to alarm levels.
+</ParamField>
+
+<ParamField body="receiveOwnAuditEvents" type="boolean">
+  Whether the user receives audit events they triggered themselves.
+</ParamField>
+
+<ParamField body="theme" type="string">
+  UI theme preference for this user.
+</ParamField>
+
+<ParamField body="hideMenu" type="boolean">
+  Whether to hide the navigation menu for this user.
+</ParamField>
+
+<ParamField body="userProfile" type="number">
+  ID of the user profile to assign. Use `0` for no profile.
+</ParamField>
+
+**HTTP 200** — Returns an array of `JsonUser` objects representing all users after creation.
+
+```bash
+curl -X POST \
+  "http://localhost:8080/Scada-LTS/api/users/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "jdoe",
+    "password": "s3cur3P@ss!",
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jdoe@example.com",
+    "phone": "+1-555-0200",
+    "admin": false,
+    "disabled": false,
+    "homeUrl": "/Scada-LTS/",
+    "receiveAlarmEmails": 1,
+    "receiveOwnAuditEvents": false,
+    "theme": "",
+    "hideMenu": false,
+    "userProfile": 2
+  }'
+```
+
+---
+
+## PUT /api/users/
+
+Update an existing user account. Include the user's `id` in the request body to identify the record. Returns the number of records updated.
+
+### Request body
+
+The body follows the `JsonUser` schema. The `id` field is required; all other fields replace the existing values.
+
+<ParamField body="id" type="number" required>
+  Numeric ID of the user to update.
+</ParamField>
+
+<ParamField body="username" type="string">
+  Updated login username.
+</ParamField>
+
+<ParamField body="firstName" type="string">
+  Updated first name.
+</ParamField>
+
+<ParamField body="lastName" type="string">
+  Updated last name.
+</ParamField>
+
+<ParamField body="email" type="string">
+  Updated email address.
+</ParamField>
+
+<ParamField body="admin" type="boolean">
+  Updated administrator status.
+</ParamField>
+
+<ParamField body="disabled" type="boolean">
+  Set to `true` to disable the account.
+</ParamField>
+
+<ParamField body="userProfile" type="number">
+  ID of the profile to assign, or `0` for none.
+</ParamField>
+
+### Response
+
+<ResponseField name="" type="number">
+  Returns the number of updated records (typically `1` on success).
+</ResponseField>
+
+**HTTP 200** — Returns an update count.
+
+```bash
+curl -X PUT \
+  "http://localhost:8080/Scada-LTS/api/users/" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 3,
+    "username": "jdoe",
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+1-555-0200",
+    "admin": false,
+    "disabled": false,
+    "homeUrl": "/Scada-LTS/",
+    "receiveAlarmEmails": 2,
+    "receiveOwnAuditEvents": false,
+    "theme": "",
+    "hideMenu": false,
+    "userProfile": 2
+  }'
+```
+
+---
+
+## GET /api/users/{id}
+
+Retrieve full account details for a single user by numeric ID.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the user to retrieve.
+</ParamField>
+
+### Response
+
+Returns a `JsonUser` object.
+
+<ResponseField name="id" type="number">
+  Internal numeric ID of the user.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Login username.
+</ResponseField>
+
+<ResponseField name="firstName" type="string">
+  User's first name.
+</ResponseField>
+
+<ResponseField name="lastName" type="string">
+  User's last name.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address.
+</ResponseField>
+
+<ResponseField name="phone" type="string">
+  User's phone number.
+</ResponseField>
+
+<ResponseField name="admin" type="boolean">
+  Whether the user has administrator privileges.
+</ResponseField>
+
+<ResponseField name="disabled" type="boolean">
+  Whether the account is disabled.
+</ResponseField>
+
+<ResponseField name="homeUrl" type="string">
+  Post-login redirect URL.
+</ResponseField>
+
+<ResponseField name="lastLogin" type="number">
+  Unix timestamp (milliseconds) of the user's last successful login.
+</ResponseField>
+
+<ResponseField name="receiveAlarmEmails" type="number">
+  Alarm email notification level.
+</ResponseField>
+
+<ResponseField name="receiveOwnAuditEvents" type="boolean">
+  Whether the user receives self-generated audit events.
+</ResponseField>
+
+<ResponseField name="theme" type="string">
+  UI theme preference.
+</ResponseField>
+
+<ResponseField name="hideMenu" type="boolean">
+  Whether the navigation menu is hidden.
+</ResponseField>
+
+<ResponseField name="userProfile" type="number">
+  ID of the assigned user profile (`0` if none).
+</ResponseField>
+
+**HTTP 200** — Returns the user object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/users/3" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "id": 3,
+  "username": "jdoe",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane.doe@example.com",
+  "phone": "+1-555-0200",
+  "admin": false,
+  "disabled": false,
+  "homeUrl": "/Scada-LTS/",
+  "lastLogin": 1713000000000,
+  "receiveAlarmEmails": 2,
+  "receiveOwnAuditEvents": false,
+  "theme": "",
+  "hideMenu": false,
+  "userProfile": 2
+}
+```
+
+---
+
+## DELETE /api/users/{id}
+
+Delete a user account by its numeric ID. This action is permanent and cannot be undone.
+
+<ParamField path="id" type="number" required>
+  Numeric ID of the user to delete.
+</ParamField>
+
+### Response
+
+<ResponseField name="" type="number">
+  Returns the ID of the deleted user on success.
+</ResponseField>
+
+**HTTP 200** — Returns the deleted user's ID.
+
+<Warning>
+  Deleting a user is irreversible. Ensure you have selected the correct ID before calling this endpoint.
+</Warning>
+
+```bash
+curl -X DELETE \
+  "http://localhost:8080/Scada-LTS/api/users/3" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+3
+```
+
+---
+
+## PUT /api/users/password
+
+Update a user's password. Administrators can change any user's password without supplying the old password. Non-administrator users must provide their current password in the `oldPassword` field.
+
+### Request body
+
+<ParamField body="userId" type="number" required>
+  Numeric ID of the user whose password you are changing.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The new password to set.
+</ParamField>
+
+<ParamField body="oldPassword" type="number">
+  The user's current password. Required for non-administrator users; ignored when called by an administrator.
+</ParamField>
+
+### Response
+
+<ResponseField name="" type="number">
+  Returns `1` on success.
+</ResponseField>
+
+**HTTP 200** — Returns `1` when the password is updated successfully.
+
+```bash
+curl -X PUT \
+  "http://localhost:8080/Scada-LTS/api/users/password" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4=" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": 3,
+    "password": "newS3cur3P@ss!"
+  }'
+```

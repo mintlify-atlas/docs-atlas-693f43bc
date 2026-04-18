@@ -1,0 +1,350 @@
+---
+title: "Installing Scada-LTS: Docker, Tomcat, and Source Builds"
+description: "Install Scada-LTS using Docker Compose, build from source using Gradle 6.8.1, or deploy a pre-built WAR file to an existing Apache Tomcat 9 server."
+---
+
+Scada-LTS can be deployed in three ways: using the official Docker image with Docker Compose (recommended for most users), building the application from source with Gradle and deploying to a local Tomcat instance, or obtaining a pre-built WAR file from the GitHub releases page and deploying it manually. Choose the method that fits your environment and operational requirements.
+
+## System requirements
+
+| Component | Requirement |
+|---|---|
+| Java | 11 (OpenJDK or Oracle JDK) |
+| Application server | Apache Tomcat 9.0 |
+| Database | MySQL 8.0 |
+| Build tool (source builds) | Gradle 6.8.1 |
+| Memory | 2 GB RAM minimum allocated to the JVM (`-Xmx2G`) |
+| Disk | 1 GB for application; additional space for database and logs |
+
+<Warning>
+  MySQL 8 is required. Scada-LTS uses MySQL-specific SQL functions (including `log_bin_trust_function_creators`) that are not available in MariaDB or older MySQL versions.
+</Warning>
+
+## Installation methods
+
+<Tabs>
+  <Tab title="Docker Compose">
+    Docker Compose is the recommended installation method. The official `docker-compose.yml` configures and links all three required services: MySQL 8, Scada-LTS on Tomcat 9, and a HiveMQ MQTT broker.
+
+    ### Prerequisites
+
+    - Docker Engine 20.10 or later
+    - Docker Compose v2 plugin
+    - Ports `8080`, `3306`, `1883`, and `8081` free on the host
+
+    ### Configuration
+
+    Save the following as `docker-compose.yml` in a dedicated directory:
+
+    ```yaml docker-compose.yml
+    version: '3'
+    services:
+        database:
+            container_name: mysql
+            image: mysql/mysql-server:8.0.32
+            ports:
+                - "3306:3306"
+            environment:
+                - MYSQL_ROOT_PASSWORD=root
+                - MYSQL_USER=root
+                - MYSQL_PASSWORD=root
+                - MYSQL_DATABASE=scadalts
+            expose: ["3306"]
+            volumes:
+                - ./db_data:/var/lib/mysql:rw
+                - ./db_conf:/etc/mysql:ro
+            command: --log_bin_trust_function_creators=1
+        scadalts:
+            image: scadalts/scadalts:latest
+            environment:
+                - CATALINA_OPTS=-Xmx2G -Xms2G
+            ports:
+                - "8080:8080"
+            depends_on:
+                - database
+            expose: ["8080", "8000"]
+            volumes:
+                - ./tomcat_log:/usr/local/tomcat/logs:rw
+            links:
+                - database:database
+            command:
+                - /usr/bin/wait-for-it
+                - --host=database
+                - --port=3306
+                - --timeout=30
+                - --strict
+                - --
+                - /usr/local/tomcat/bin/catalina.sh
+                - run
+        mqtt:
+            image: hivemq/hivemq4:latest
+            ports:
+                - "8081:8080"
+                - "1883:1883"
+            expose: [ "8081", "1883" ]
+    ```
+
+    ### Environment variables
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `MYSQL_ROOT_PASSWORD` | `root` | MySQL root account password |
+    | `MYSQL_USER` | `root` | Application database user |
+    | `MYSQL_PASSWORD` | `root` | Application database password |
+    | `MYSQL_DATABASE` | `scadalts` | Database name created on first start |
+    | `CATALINA_OPTS` | `-Xmx2G -Xms2G` | JVM options passed to Tomcat |
+
+    <Warning>
+      The default credentials (`root`/`root`) are suitable for local development only. Change all passwords in the `environment` block before running in any networked or production environment.
+    </Warning>
+
+    ### Start and stop
+
+    ```bash
+    # Start all services in the background
+    docker compose up -d
+
+    # View application logs
+    docker compose logs -f scadalts
+
+    # Stop all services (data is preserved in volumes)
+    docker compose down
+
+    # Stop and remove all data volumes
+    docker compose down -v
+    ```
+
+    The application is available at `http://localhost:8080/Scada-LTS` once Tomcat reports a successful startup in the logs.
+
+    ### Tomcat database connection
+
+    The Docker image copies `docker/config/context.xml` into the deployed application at build time. This file configures the JDBC connection pool:
+
+    ```xml docker/config/context.xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Context>
+        <WatchedResource>WEB-INF/web.xml</WatchedResource>
+        <Resource name="jdbc/scadalts"
+                  auth="Container"
+                  type="javax.sql.DataSource"
+                  factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+                  testWhileIdle="true"
+                  testOnBorrow="true"
+                  validationQuery="/* ping */ SELECT 1"
+                  maxActive="80"
+                  minIdle="10"
+                  maxWait="10000"
+                  initialSize="10"
+                  username="root"
+                  password="root"
+                  driverClassName="com.mysql.jdbc.Driver"
+                  defaultTransactionIsolation="READ_COMMITTED"
+                  connectionProperties="useSSL=false;allowPublicKeyRetrieval=true"
+                  url="jdbc:mysql://database:3306/scadalts"
+        />
+    </Context>
+    ```
+
+    The JDBC URL `jdbc:mysql://database:3306/scadalts` uses the Docker Compose service name `database` as the hostname, which Docker's internal DNS resolves automatically.
+  </Tab>
+
+  <Tab title="Build from source">
+    Building from source is required when you want to modify the application, develop new features, or create a custom Docker image.
+
+    ### Prerequisites
+
+    - Java 11 (set `JAVA_HOME` to the JDK 11 installation)
+    - Gradle 6.8.1 (or use the `./gradlew` wrapper included in the repository)
+    - Apache Tomcat 9.0 installed and `CATALINA_HOME` environment variable pointing to it
+    - Node.js and npm (for the Vue.js frontend build)
+    - MySQL 8 running with an empty `scadalts` database
+
+    ### Clone the repository
+
+    ```bash
+    git clone https://github.com/SCADA-LTS/Scada-LTS.git
+    cd Scada-LTS
+    ```
+
+    ### Gradle tasks
+
+    The following Gradle tasks cover the most common development and build operations. Gradle version 6.8.1 is required; the project targets Java 11 (`sourceCompatibility = 1.11`, `targetCompatibility = 1.11` in `build.gradle`).
+
+    | Command | Description |
+    |---|---|
+    | `gradle war` | Build the `Scada-LTS.war` file in `build/libs/` |
+    | `gradle run` | Launch the Tomcat instance (requires `CATALINA_HOME`) |
+    | `gradle runDebug` | Launch Tomcat in JPDA debug mode |
+    | `gradle buildRun` | Full build (clean, install npm deps, test, package WAR, deploy to Tomcat, run) |
+    | `gradle buildRunDebug` | Same as `buildRun` but starts Tomcat in debug mode |
+    | `gradle test` | Run backend unit tests |
+    | `gradle scadalts-ui::testUi` | Run Vue.js frontend unit tests |
+    | `gradle -PskipUi=true buildRun` | Build and run without rebuilding the frontend (faster iteration) |
+
+    <Tip>
+      Use `gradle -PskipUi=true buildRun` during backend development to skip the Vue.js compilation step, which significantly reduces build time when the frontend has not changed.
+    </Tip>
+
+    ### Full build and run
+
+    ```bash
+    # Set required environment variable
+    export CATALINA_HOME=/path/to/apache-tomcat-9.0.x
+
+    # Build everything and start Tomcat
+    gradle buildRun
+    ```
+
+    `buildRun` chains the following internal tasks in order: `clearTomcat`, `clearProject`, `installWebDependency`, `test`, `war`, `deployTomcat`, `run`. The WAR is deployed to `$CATALINA_HOME/webapps/Scada-LTS.war`.
+
+    ### Build WAR only
+
+    ```bash
+    gradle war
+    ```
+
+    The compiled archive is written to `build/libs/Scada-LTS.war`. You can then deploy this file manually to any Tomcat 9 instance.
+
+    ### Configure the database connection
+
+    Before running, ensure `$CATALINA_HOME/conf/context.xml` or the application's `META-INF/context.xml` contains a `Resource` element pointing to your MySQL instance. Use the `docker/config/context.xml` file in the repository as a template, updating the `url`, `username`, and `password` attributes to match your MySQL setup.
+  </Tab>
+
+  <Tab title="WAR deployment">
+    If you already operate an Apache Tomcat 9 server, you can deploy Scada-LTS as a standard WAR file without Docker or building from source.
+
+    ### Prerequisites
+
+    - Apache Tomcat 9.0
+    - Java 11 runtime
+    - MySQL 8.0 with a `scadalts` database created
+    - The `Scada-LTS.war` file from the [GitHub releases page](https://github.com/SCADA-LTS/Scada-LTS/releases)
+
+    ### Steps
+
+    <Steps>
+      <Step title="Create the database">
+        Log into MySQL and create the application database:
+
+        ```sql
+        CREATE DATABASE scadalts CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        CREATE USER 'scadalts'@'localhost' IDENTIFIED BY 'yourpassword';
+        GRANT ALL PRIVILEGES ON scadalts.* TO 'scadalts'@'localhost';
+        FLUSH PRIVILEGES;
+        ```
+
+        Scada-LTS creates its own schema on first startup; you only need to create an empty database and a user with full privileges on it.
+
+        Enable the `log_bin_trust_function_creators` flag if binary logging is active on your MySQL instance:
+
+        ```sql
+        SET GLOBAL log_bin_trust_function_creators = 1;
+        ```
+      </Step>
+
+      <Step title="Add required JAR files to Tomcat">
+        Copy the following JAR files into `$CATALINA_HOME/lib/`. These are included in the Docker image and are also present in the `tomcat/lib/` directory of the source repository:
+
+        - `mysql-connector-java-5.1.49.jar`
+        - `activation.jar`
+        - `jaxb-api-2.4.0-b180830.0359.jar`
+        - `jaxb-core-3.0.2.jar`
+        - `jaxb-runtime-2.4.0-b180830.0438.jar`
+      </Step>
+
+      <Step title="Configure the JDBC data source">
+        Add a `Resource` element to `$CATALINA_HOME/conf/context.xml` (or to `META-INF/context.xml` inside the deployed application):
+
+        ```xml
+        <Resource name="jdbc/scadalts"
+                  auth="Container"
+                  type="javax.sql.DataSource"
+                  factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+                  testWhileIdle="true"
+                  testOnBorrow="true"
+                  validationQuery="/* ping */ SELECT 1"
+                  maxActive="80"
+                  minIdle="10"
+                  maxWait="10000"
+                  initialSize="10"
+                  username="scadalts"
+                  password="yourpassword"
+                  driverClassName="com.mysql.jdbc.Driver"
+                  defaultTransactionIsolation="READ_COMMITTED"
+                  connectionProperties="useSSL=false;allowPublicKeyRetrieval=true"
+                  url="jdbc:mysql://localhost:3306/scadalts"
+        />
+        ```
+      </Step>
+
+      <Step title="Set JVM options">
+        Set `CATALINA_OPTS` before starting Tomcat to allocate sufficient heap memory:
+
+        ```bash
+        export CATALINA_OPTS="-Xmx2G -Xms2G"
+        ```
+
+        On Windows, set this in `$CATALINA_HOME/bin/setenv.bat`:
+
+        ```bat
+        set CATALINA_OPTS=-Xmx2G -Xms2G
+        ```
+      </Step>
+
+      <Step title="Deploy the WAR file">
+        Copy `Scada-LTS.war` into `$CATALINA_HOME/webapps/`:
+
+        ```bash
+        cp Scada-LTS.war $CATALINA_HOME/webapps/
+        ```
+
+        Then start Tomcat:
+
+        ```bash
+        $CATALINA_HOME/bin/catalina.sh run
+        ```
+
+        Tomcat auto-deploys the WAR and Scada-LTS initialises the database schema on first startup.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Post-install verification
+
+After starting Scada-LTS by any method, verify the installation is healthy:
+
+<Steps>
+  <Step title="Check the application URL">
+    Open `http://<host>:8080/Scada-LTS` in a browser. The login page should appear without any server error.
+  </Step>
+
+  <Step title="Log in">
+    Log in with the default credentials (`admin` / `admin`). A successful login confirms the application has connected to the database and loaded the default configuration.
+  </Step>
+
+  <Step title="Check the system information page">
+    After logging in, navigate to **Administration → System information**. This page shows the application version, database connection status, and JVM memory usage. Confirm that:
+
+    - The database status is reported as connected.
+    - JVM free memory is greater than 500 MB (the 2 GB heap should be largely free at startup).
+  </Step>
+
+  <Step title="Create a virtual data source">
+    Add a Virtual data source and enable it as described in the [quickstart guide](/quickstart). If the data source activates and data point values update, the runtime engine is functioning correctly.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+**Tomcat starts but the application does not appear at `/Scada-LTS`**
+
+Check the Tomcat logs in `$CATALINA_HOME/logs/catalina.out` (or `./tomcat_log/` in a Docker deployment) for WAR deployment errors or database connection failures.
+
+**MySQL connection refused at startup**
+
+In Docker Compose deployments, the `wait-for-it` script waits up to 30 seconds for MySQL to accept connections. If MySQL takes longer to initialise on first run, restart the `scadalts` container: `docker compose restart scadalts`.
+
+**Out of memory errors**
+
+Increase the heap allocation in `CATALINA_OPTS`. For larger installations with many concurrent data sources, `-Xmx4G -Xms4G` is a reasonable starting point.

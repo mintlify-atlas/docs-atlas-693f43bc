@@ -1,0 +1,123 @@
+---
+title: "Manage Scada-LTS User Accounts and Access Permissions"
+description: "Scada-LTS supports role-based access control with admin and standard user roles. Create user accounts, assign permissions, and manage user profiles."
+---
+
+Scada-LTS uses a role-based access control model built around two account types — administrators and standard users — with fine-grained permissions managed through reusable user profiles. Administrators have unrestricted access to all system functions; standard users see only the data sources, data points, views, and watch lists that have been explicitly granted to them.
+
+## User roles
+
+<Tabs>
+  <Tab title="Administrator">
+    An administrator (`admin: true`) has full access to every feature in Scada-LTS:
+
+    - Create, edit, and delete all users
+    - Manage data sources and data points
+    - Access all watch lists, graphical views, and synoptic panels regardless of ownership
+    - Configure system settings, event handlers, and scheduled exports
+    - View and manage events and alarm states for all points
+
+    An administrator cannot disable or remove their own account from the user management screen (the admin and disabled checkboxes are locked for the currently logged-in user).
+  </Tab>
+  <Tab title="Standard user">
+    A standard user (`admin: false`) can only access the resources explicitly granted to them, either directly or through a user profile. Their home URL, UI theme, and alarm email preferences are configurable per account. Standard users can edit their own profile details (name, phone, theme) but cannot change their username, email, or admin status without administrator intervention.
+  </Tab>
+</Tabs>
+
+## User account fields
+
+The following fields are stored on every user account (`User.java`):
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `username` | Yes | Unique login name; validated for uniqueness on the server before saving |
+| `password` | Yes | Stored as a hash; never returned by the API |
+| `firstName` | No | Display first name |
+| `lastName` | No | Display last name |
+| `email` | Yes | Used for alarm notifications and report delivery |
+| `phone` | No | Optional contact phone number |
+| `admin` | No | Boolean flag granting full system access |
+| `disabled` | No | Prevents login without deleting the account |
+| `homeUrl` | No | Page the user is redirected to after login |
+| `receiveAlarmEmails` | No | Minimum alarm level that triggers an email to this user |
+| `receiveOwnAuditEvents` | No | Whether the user receives emails for their own audit trail events |
+| `theme` | No | UI colour theme: `DEFAULT`, `MODERN`, or `DARK` |
+| `hideMenu` | No | Collapses the navigation menu on login (non-admin only) |
+| `enableFullScreen` | No | Opens the UI in full-screen mode automatically |
+| `userProfile` | No | ID of the user profile to apply (standard users only) |
+
+## Creating a new user
+
+<Steps>
+  <Step title="Open User Management">
+    Navigate to **Users** in the main menu. The left panel lists all registered accounts. This panel is only visible to administrators.
+  </Step>
+  <Step title="Open the creation dialog">
+    Click the **+** button at the bottom of the user list to open the **Create user** dialog.
+  </Step>
+  <Step title="Enter credentials">
+    Enter a unique **Username**. The form checks uniqueness against the server as you type. Enter and confirm the **Password** — both fields must match before the form is valid.
+  </Step>
+  <Step title="Fill in profile details">
+    Add **First name**, **Last name**, **Email**, and optionally **Phone**. The email address is used for alarm notifications and scheduled report emails.
+  </Step>
+  <Step title="Set role and options">
+    Check **Administrator** to grant full access, or leave it unchecked for a standard user. Optionally set a **Home URL**, **Theme**, and alarm email level.
+  </Step>
+  <Step title="Assign a user profile (optional)">
+    For standard users, select a **User Profile** from the drop-down to apply a pre-configured permission set. See [User profiles](#user-profiles) below.
+  </Step>
+  <Step title="Save">
+    Click **OK**. The new user appears in the list immediately and can log in right away.
+  </Step>
+</Steps>
+
+## User profiles
+
+A user profile is a named, reusable permission template. Rather than configuring each user's data source, data point, view, and watch list access individually, you create a profile once and assign it to as many users as needed.
+
+Each profile (`UsersProfileVO`) stores:
+
+- **Data source permissions** — which data sources the user can read
+- **Graphical view permissions** — which views the user can open and at what access level
+- **Watch list permissions** — which watch lists the user can view or edit
+
+Profiles are created from within the user details form by clicking the icon next to the **User profile** selector. A new profile dialog opens with three permission sections. You can copy an existing profile to use as a starting point.
+
+<Note>
+  Assigning a profile to a user replaces their individual permissions with the profile's permissions. If a user is later switched to a different profile, the previous profile's permissions are removed. Setting the profile to **None** restores direct permission management for that user.
+</Note>
+
+## Password management
+
+Administrators can reset any user's password from the user details screen using the key icon in the form header. The user's current password is not required for an admin reset.
+
+Users can change their own password through the same interface when viewing their own account. They must provide a new password and confirm it; the two fields must match before saving is permitted.
+
+Passwords are stored hashed and are never returned by any API endpoint. There is no password recovery mechanism by default — an administrator must perform the reset.
+
+## Mailing lists (recipient lists)
+
+Mailing lists are reusable groups of recipients used for alarm notifications and scheduled report delivery. A mailing list can contain a mix of:
+
+- Registered Scada-LTS users (by ID)
+- External email addresses
+
+Mailing lists are managed under the **Recipient lists** section of the Users area and can be referenced by name when configuring alarm event handlers or report email recipients.
+
+## Disabling accounts
+
+Setting `disabled: true` on a user account prevents that user from logging in without deleting the account or its data. Disabled accounts are shown with an outline icon in the user list. This is useful for temporarily suspending access — for example when a contractor's engagement ends — while preserving the account's watch list and report configurations.
+
+<Warning>
+  Scada-LTS ships with a default administrator account. **Change the default admin password immediately after installation.** Leaving the default credentials in place allows unrestricted access to all data sources, configuration, and historical data.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Watch Lists" icon="list-check" href="/guide/watchlist">
+    Share watch lists with specific users using XID-based access control.
+  </Card>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Configure per-user and per-profile data point access permissions.
+  </Card>
+</CardGroup>

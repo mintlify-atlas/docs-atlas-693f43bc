@@ -1,0 +1,175 @@
+---
+title: "Publishers: Forward Live Point Data to External Systems"
+description: "Scada-LTS publishers send data point values to external systems. Learn how to configure persistent, HTTP, and other publisher types."
+---
+
+Publishers are Scada-LTS components that push data point values outward to an external destination in near-real time. While data sources pull data *into* Scada-LTS from field devices and protocols, publishers do the opposite — they take values already collected by Scada-LTS and forward them to another system as those values change. This makes publishers the primary integration mechanism for feeding data warehouses, cloud IoT platforms, remote SCADA instances, or any HTTP-capable endpoint.
+
+Publishers are managed through **System → Publishers** in the main menu (backed by `publishers.shtm`). Each publisher is an independent runtime object that runs continuously in the background alongside data sources.
+
+<Note>
+  Publishers are distinct from **event handlers**. Event handlers react to alarm conditions and send notifications (email, SMS, script execution). Publishers stream live point values continuously to a target system regardless of alarm state.
+</Note>
+
+---
+
+## Publisher types
+
+Scada-LTS ships with three publisher types, each implemented as a separate Java class under `com.serotonin.mango.vo.publish`.
+
+<AccordionGroup>
+  <Accordion title="HTTP Sender (HTTP_SENDER)">
+    The HTTP Sender publisher forwards data point values to any URL that accepts HTTP GET or POST requests. Each data point is mapped to a named query parameter. The publisher supports:
+
+    - **GET or POST** method selection
+    - **Static headers** — key/value pairs appended to every request (e.g. `Authorization: Bearer <token>` or `Content-Type: application/json`)
+    - **Static parameters** — key/value pairs appended to every request body or query string
+    - **Date format** — choose between `DATE_FORMAT_BASIC` (local time string), `DATE_FORMAT_TZ` (with timezone offset), or `DATE_FORMAT_UTC` (UTC ISO 8601)
+    - **Result warnings** — optionally raise an alarm-level event when the remote server returns a non-success response
+
+    The publisher raises a `SEND_EXCEPTION_EVENT` (urgent) on network or connection errors and a `RESULT_WARNINGS_EVENT` (informational) when the server responds with a warning status.
+
+    If a `Content-Type: application/json` header is present in the static headers list, the publisher serialises the payload as JSON rather than form-encoded parameters.
+  </Accordion>
+
+  <Accordion title="Persistent Sender (PERSISTENT)">
+    The Persistent Sender publisher establishes a direct TCP connection to another Scada-LTS instance and streams point values in the native Scada-LTS wire protocol. This is the highest-fidelity forwarding option and is used to chain multiple Scada-LTS servers together in a hub-and-spoke architecture.
+
+    Key configuration fields:
+
+    | Field | Description |
+    |---|---|
+    | **Host** | Hostname or IP of the remote Scada-LTS instance |
+    | **Port** | TCP port the remote instance listens on for persistent connections |
+    | **Authorization key** | Shared secret used to authenticate the connection |
+    | **XID prefix** | Optional string prepended to point XIDs when registering on the remote instance, preventing XID collisions if multiple senders connect to one receiver |
+    | **Sync type** | Historical backfill schedule: None, Daily, Weekly, or Monthly |
+
+    The publisher raises urgent-level events for `CONNECTION_FAILED`, `PROTOCOL_FAILURE`, `CONNECTION_ABORTED`, and `CONNECTION_LOST` conditions, and a no-alarm `SYNC_COMPLETION` event when a historical sync finishes successfully.
+  </Accordion>
+
+  <Accordion title="Pachube / Xively Sender (PACHUBE)">
+    The Pachube publisher sends data to the Pachube (later renamed Xively) IoT data platform using its REST API. Each data point is mapped to a **Data Stream ID** within a Pachube feed.
+
+    Key configuration fields:
+
+    | Field | Default | Description |
+    |---|---|---|
+    | **API key** | *(required)* | Pachube/Xively API authentication key |
+    | **Timeout seconds** | 30 | HTTP request timeout |
+    | **Retries** | 2 | Number of retry attempts on failure |
+
+    Note that the Pachube/Xively cloud platform has been discontinued. This publisher type is retained for backwards compatibility with existing configurations.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Creating a publisher
+
+<Steps>
+  <Step title="Navigate to Publishers">
+    Go to **System → Publishers** from the main navigation menu.
+  </Step>
+  <Step title="Add a new publisher">
+    Click the **Add publisher** button and select the publisher type from the dropdown (HTTP Sender, Persistent, or Pachube).
+  </Step>
+  <Step title="Configure general settings">
+    Every publisher has common fields regardless of type:
+
+    - **Name** — a human-readable label for this publisher
+    - **XID** — the export identifier used in configuration files (auto-generated but editable)
+    - **Enabled** — whether the publisher runs immediately on save
+    - **Update event** — how the publisher decides to send a new value: on change, on timestamp, or on a fixed polling period
+    - **Publish type** — send all collected values since the last send, or only the most recent value
+    - **Cache warning size** and **cache discard size** — thresholds controlling the outbound queue
+  </Step>
+  <Step title="Configure type-specific settings">
+    Fill in the fields specific to your chosen publisher type (URL, host/port, API key, etc.). See the publisher type descriptions above for field details.
+  </Step>
+  <Step title="Select data points to publish">
+    In the **Points** section, search for and add the data points whose values this publisher should forward. For each point you can configure a type-specific mapping (e.g. the HTTP parameter name, or the Pachube data stream ID).
+  </Step>
+  <Step title="Save the publisher">
+    Click **Save**. If **Enabled** is checked, the publisher starts running immediately and its status becomes visible in the publisher list.
+  </Step>
+</Steps>
+
+---
+
+## Publisher configuration reference
+
+### Common fields (all publisher types)
+
+| Field | Description |
+|---|---|
+| **Name** | Display name shown in the publisher list |
+| **XID** | Export identifier; must be unique across all publishers |
+| **Enabled** | Activates or deactivates the publisher runtime |
+| **Update event** | Trigger for sending: `POLL_PERIOD` (fixed interval), `CHANGE` (on value change) |
+| **Publish type** | `ALL` sends every collected value; `CHANGES_ONLY` sends only the latest |
+| **Cache warning size** | Number of queued values that triggers a warning event |
+| **Cache discard size** | Number of queued values at which the oldest entries are dropped |
+
+### HTTP Sender specific fields
+
+```
+URL            https://api.example.com/scada/values
+Method         POST
+Static headers Content-Type: application/json
+               Authorization: Bearer eyJ...
+Date format    DATE_FORMAT_UTC
+```
+
+### Persistent Sender specific fields
+
+```
+Host            scada-hub.example.com
+Port            8090
+Auth key        my-shared-secret-key
+XID prefix      SITE1_
+Sync type       SYNC_TYPE_DAILY
+```
+
+---
+
+## Monitoring publisher status
+
+The publisher list page shows the current runtime status of each publisher. A publisher can be in one of the following states:
+
+- **Running** — actively connected and forwarding data
+- **Disabled** — manually disabled; not sending any data
+- **Error** — a connection or protocol error has occurred (check the event log for the specific event raised by that publisher type)
+
+Publisher events appear in the Scada-LTS event list alongside data source and system events. You can attach event handlers to publisher events — for example, send an email when a persistent connection is lost.
+
+---
+
+## Setting up your first HTTP publisher
+
+The following example publishes temperature readings to a simple HTTP endpoint:
+
+<Steps>
+  <Step title="Create the publisher">
+    Navigate to **System → Publishers**, click **Add publisher**, and choose **HTTP Sender**.
+  </Step>
+  <Step title="Set the target URL">
+    Enter the destination URL, for example `https://api.example.com/ingest`. Select **POST** as the method.
+  </Step>
+  <Step title="Add authentication headers">
+    Under **Static headers**, add a row: key `Authorization`, value `Bearer YOUR_TOKEN`. Add a second row: key `Content-Type`, value `application/json` to enable JSON serialisation.
+  </Step>
+  <Step title="Add data points">
+    In the **Points** section, find and add the data point you want to forward (e.g. `DP_TEMP_LINE1`). Set the parameter name to `temperature`.
+  </Step>
+  <Step title="Enable and save">
+    Ensure **Enabled** is toggled on, then click **Save**. The publisher status should show **Running** within a few seconds.
+  </Step>
+  <Step title="Verify delivery">
+    Check your receiving endpoint's logs to confirm values are arriving. If not, review the Scada-LTS event log for `SEND_EXCEPTION_EVENT` entries from this publisher.
+  </Step>
+</Steps>
+
+<Tip>
+  Start with a low-traffic data point (one that changes infrequently) when testing a new HTTP publisher. This limits the volume of outbound requests while you verify the endpoint receives and parses the payload correctly.
+</Tip>

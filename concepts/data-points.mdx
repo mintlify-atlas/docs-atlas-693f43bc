@@ -1,0 +1,180 @@
+---
+title: "Data Points: Measurements and Signals in Scada-LTS"
+description: "Data points represent individual measurements or control signals in Scada-LTS. Learn about data types, logging modes, and point configuration."
+---
+
+A data point is the fundamental unit of process data in Scada-LTS. It represents a single measurement or control signal — a temperature reading, a valve position, a pump run-status, a batch ID — and carries a current value, a timestamp, and a full history of past values. Data points belong to a parent data source, which determines how their raw values are acquired, but once the value enters the runtime engine it is managed independently of the protocol layer.
+
+## Data types
+
+Every data point has a fixed data type that determines what kind of value it can hold and which event detectors, text renderers, and chart renderers are compatible with it. The five types defined in `DataTypes.java` (referenced throughout `DataPointVO.java`) are:
+
+| Type | Description | Example values |
+|------|-------------|----------------|
+| **Binary** | Boolean true/false | Motor running / stopped |
+| **Multistate** | Integer enumeration | 0=Off, 1=Auto, 2=Manual |
+| **Numeric** | 64-bit floating point | 23.7 °C, 4.2 bar |
+| **Alphanumeric** | UTF-8 string | Batch ID, operator message |
+| **Image** | Raw image bytes | Camera snapshot, HTTP image |
+
+The data type is set by the **point locator** when the data point is first created and cannot be changed without recreating the locator.
+
+## Point locators
+
+A point locator binds a data point to a specific register, topic, column, or object within its parent data source. The locator is protocol-specific — a Modbus locator stores a slave ID, function code, and register offset; an MQTT locator stores a topic name; a SQL locator stores a column name. The locator also declares the data type, so Scada-LTS knows what kind of value to expect from the wire.
+
+```java
+// From DataPointVO.java:424 — locator is stored as a polymorphic PointLocatorVO
+public <T extends PointLocatorVO> T getPointLocator() {
+    return (T) pointLocator;
+}
+```
+
+When a data source reads a new sample, it passes the raw value through the locator's conversion logic before storing a typed `PointValueTime` object.
+
+## Logging modes
+
+Scada-LTS does not store every sample in the database by default. The **logging type** controls when a value is persisted to the historical archive (`DataPointVO.java:69`):
+
+<Tabs>
+  <Tab title="On Change">
+    A new value is logged only when it differs from the previous value. For numeric points, a **tolerance** band can be configured so that small fluctuations (noise) do not trigger a write. This is the most common mode for binary and multistate points.
+
+    ```
+    loggingType = ON_CHANGE
+    tolerance   = 0.1   // ignore changes smaller than 0.1 units
+    ```
+  </Tab>
+  <Tab title="All Data">
+    Every sample received from the data source is written to the database, regardless of whether the value changed. Use this mode only when you need a complete raw record — it generates significantly more database writes.
+
+    ```
+    loggingType = ALL
+    ```
+  </Tab>
+  <Tab title="Interval">
+    One value is logged at a fixed time interval, regardless of how often the data source polls. The **interval logging type** determines which sample within the interval is stored:
+
+    | Interval type | Behaviour |
+    |---------------|-----------|
+    | `INSTANT` | The most recent sample at the interval boundary |
+    | `MAXIMUM` | The highest value seen during the interval |
+    | `MINIMUM` | The lowest value seen during the interval |
+    | `AVERAGE` | The mean of all samples in the interval |
+
+    ```
+    loggingType            = INTERVAL
+    intervalLoggingPeriod  = 15
+    intervalLoggingPeriodType = MINUTES
+    intervalLoggingType    = AVERAGE
+    ```
+  </Tab>
+  <Tab title="On Timestamp Change">
+    Similar to On Change but triggers on a new timestamp rather than a new value. Useful for sources that repeat the same value with updated timestamps.
+
+    ```
+    loggingType = ON_TS_CHANGE
+    ```
+  </Tab>
+  <Tab title="None">
+    Values are never written to the database. The point still receives live values and can appear in graphical views and watch lists, but no historical record is kept.
+
+    ```
+    loggingType = NONE
+    ```
+  </Tab>
+</Tabs>
+
+## Data retention (purge)
+
+Logged values are automatically purged to prevent unbounded database growth. Three purge strategies are available (`DataPointVO.java:112`):
+
+- **Period** — Delete values older than a configurable number of days, weeks, months, or years.
+- **Limit** — Keep only the most recent N values (configurable via `purgeValuesLimit`).
+- **All** — Delete all historical values on the next purge cycle (useful before decommissioning a point).
+
+## Export ID (XID)
+
+Every data point is assigned an **XID** with the prefix `DP_` (e.g. `DP_BOILER_TEMP_01`) (`DataPointVO.java:67`). The XID is used in JSON import/export, REST API calls, and event handler configuration to reference a point without relying on its numeric database ID. XIDs must be unique across the entire installation.
+
+```json
+{
+  "xid": "DP_BOILER_TEMP_01",
+  "name": "Boiler Outlet Temperature",
+  "loggingType": "ON_CHANGE",
+  "tolerance": 0.2,
+  "engineeringUnits": "Celsius",
+  "chartColour": "#e74c3c"
+}
+```
+
+## Display settings
+
+<AccordionGroup>
+  <Accordion title="Engineering units">
+    Numeric points can be tagged with one of 190 BACnet standard engineering units (e.g. `Celsius`, `Bar`, `KilowattHour`) stored as an integer code (`DataPointVO.java:188`). The unit label appears in watch lists, reports, and chart tooltips.
+  </Accordion>
+
+  <Accordion title="Chart colour">
+    The `chartColour` field accepts any CSS colour expression (`#rrggbb`, `rgb()`, or named colour). It controls the line colour when the point is plotted on a trend chart (`DataPointVO.java:190`).
+  </Accordion>
+
+  <Accordion title="Text renderer">
+    The text renderer controls how a raw value is formatted for display. Binary points can use a two-label renderer (e.g. "Running" / "Stopped"). Numeric points can use a plain renderer with a unit suffix or a range renderer that maps value ranges to descriptive text.
+  </Accordion>
+
+  <Accordion title="Extreme value discard">
+    When `discardExtremeValues` is enabled, any sample outside the `[discardLowLimit, discardHighLimit]` range is silently dropped before logging. This filters sensor spikes caused by wiring faults without triggering false alarms (`DataPointVO.java:183`).
+  </Accordion>
+
+  <Accordion title="Cache size">
+    The `defaultCacheSize` (default 1) controls how many recent values Scada-LTS keeps in memory per point. Increasing it allows graphical views and watch lists to render the last N values without a database round-trip.
+  </Accordion>
+</AccordionGroup>
+
+## Event detectors
+
+Each data point can have one or more **event detectors** that watch the incoming value stream and raise an alarm when a condition is met. Detector types available per data type (`PointEventDetectorVO.java:63`):
+
+| Detector | Applicable types | Triggers when… |
+|----------|-----------------|----------------|
+| Analog High Limit | Numeric | Value exceeds a threshold |
+| Analog Low Limit | Numeric | Value falls below a threshold |
+| Binary State | Binary | Point reaches a specific true/false state |
+| Multistate State | Multistate | Point reaches a specific integer state |
+| Alphanumeric State | Alphanumeric | String matches a configured value |
+| Point Change | All except Image | Value changes at all |
+| State Change Count | Binary, Multistate, Alphanumeric | Changes occur more than N times within a period |
+| No Change | All except Image | Value does not change within a period |
+| No Update | All | No new sample arrives within a period |
+| Positive CUSUM | Numeric | Cumulative sum of positive deviations exceeds a limit |
+| Negative CUSUM | Numeric | Cumulative sum of negative deviations exceeds a limit |
+
+Each detector can be assigned an independent alarm level and an optional sustain duration (e.g. "trigger only if high temperature persists for more than 30 seconds").
+
+## Point hierarchy
+
+Data points can be organized into a folder hierarchy called the **point hierarchy**. Folders are purely organizational — they do not affect data acquisition — but they control the tree structure shown in the watch list and graphical view point picker. A point's folder is tracked by `pointFolderId` (`DataPointVO.java:161`).
+
+<Tip>
+  Use the point hierarchy to mirror your physical plant structure — for example, `Site > Building > Floor > Panel` — so operators can quickly navigate to the points they need.
+</Tip>
+
+<Warning>
+  Changing the `loggingType` of an existing point does not affect already-stored values. Historical data logged under the old mode remains in the archive unchanged.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Data Sources" icon="database" href="/concepts/data-sources">
+    Understand the protocols and drivers that feed values into data points.
+  </Card>
+  <Card title="Alarms and Events" icon="bell" href="/concepts/alarms-events">
+    Configure event detectors and handlers to respond when values breach limits.
+  </Card>
+  <Card title="Graphical Views" icon="display" href="/concepts/graphical-views">
+    Place data point components on custom process diagrams.
+  </Card>
+  <Card title="Watch List" icon="list-check" href="/guide/watchlist">
+    Monitor multiple data points in a live tabular view.
+  </Card>
+</CardGroup>

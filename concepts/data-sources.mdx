@@ -1,0 +1,161 @@
+---
+title: "Data Sources: Connecting Scada-LTS to Field Devices"
+description: "Data sources connect Scada-LTS to industrial devices and systems. Learn about supported protocols including Modbus, BACnet, SNMP, SQL, and HTTP."
+---
+
+A data source is the top-level object that defines how Scada-LTS communicates with an external system — a PLC, field device, database, web endpoint, or the host operating system itself. Every data point in Scada-LTS belongs to exactly one data source, which is responsible for acquiring raw values and delivering them to the runtime engine. Without at least one enabled data source, no live process data flows into the system.
+
+## How data sources work
+
+Scada-LTS supports two fundamental acquisition models:
+
+- **Polling** — The runtime sends a read request to the device on a configurable schedule (e.g. every 5 seconds). Most fieldbus protocols (Modbus, BACnet, SNMP, SQL) use this model. The base class `PollingDataSource` manages the timer thread and calls each point locator in sequence.
+- **Event-driven** — The device pushes data to Scada-LTS when a value changes or a message arrives. Protocols such as HTTP Receiver, MQTT, AMQP, and POP3 are purely event-driven and do not poll.
+
+Both models produce `PointValueTime` objects that are passed to the data point's logging engine and ultimately stored in the historical archive.
+
+## Supported protocols
+
+Scada-LTS ships with drivers for a wide range of industrial and IT protocols. The complete list is encoded in `DataSourceVO.Type` (`DataSourceVO.java:93`).
+
+<AccordionGroup>
+  <Accordion title="Modbus TCP and Modbus Serial">
+    Two separate data source types cover Modbus: `MODBUS_IP` (type ID 3) for TCP/IP connections and `MODBUS_SERIAL` (type ID 2) for RS-232/RS-485 links.
+
+    Both support reading and writing coils, discrete inputs, holding registers, and input registers. The polling interval, slave ID, and register map are all configurable per data source.
+
+    ```json
+    {
+      "xid": "DS_MODBUS_TCP_001",
+      "type": "MODBUS_IP",
+      "name": "Boiler PLC",
+      "enabled": true
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="BACnet/IP">
+    The `BACNET` driver (type ID 10) implements BACnet/IP for building automation controllers. It supports object discovery, property reads, and COV (Change-of-Value) subscriptions.
+  </Accordion>
+
+  <Accordion title="SNMP">
+    `SNMP` (type ID 5) polls network devices using SNMP v1, v2c, or v3. Each data point maps to a specific OID on the target agent.
+  </Accordion>
+
+  <Accordion title="SQL">
+    `SQL` (type ID 6) executes a configurable query against any JDBC-compatible database and maps result columns to data points. Useful for integrating historian databases or ERP systems.
+  </Accordion>
+
+  <Accordion title="HTTP Retriever, HTTP Receiver, HTTP Image">
+    Three HTTP variants are available:
+
+    | Type | ID | Behaviour |
+    |------|----|-----------|
+    | HTTP Retriever | 11 | Polls a URL and parses the response body |
+    | HTTP Receiver | 7 | Listens for inbound HTTP POST messages |
+    | HTTP Image | 15 | Fetches an image URL and stores it as an Image data point |
+  </Accordion>
+
+  <Accordion title="MQTT and AMQP">
+    `MQTT` (type ID 47) connects to any MQTT broker and subscribes to topics. `AMQP` (type ID 45) connects to an AMQP 0-9-1 broker (e.g. RabbitMQ). Both protocols are event-driven — values arrive as messages and are immediately forwarded to the matching data points.
+  </Accordion>
+
+  <Accordion title="Internal (system metrics)">
+    `INTERNAL` (type ID 27) exposes Scada-LTS runtime statistics as data points — JVM heap usage, database point count, active data source count, and similar diagnostic metrics. No external connection is required.
+  </Accordion>
+
+  <Accordion title="Virtual (testing and simulation)">
+    `VIRTUAL` (type ID 1) generates synthetic values locally — random numbers, incrementing counters, alternating binary states — making it ideal for development and testing without physical hardware.
+  </Accordion>
+
+  <Accordion title="Meta (calculated points)">
+    `META` (type ID 9) does not connect to any external device. Instead, each of its data points runs a JavaScript expression that can read the current values of other data points and compute a derived result. Use Meta for unit conversion, averaging, or interlock logic.
+  </Accordion>
+
+  <Accordion title="DNP3 (IP and Serial)">
+    `DNP3_IP` (type ID 21) and `DNP3_SERIAL` (type ID 22) implement DNP3 outstation polling, commonly used in electric utility and water/wastewater SCADA applications.
+  </Accordion>
+
+  <Accordion title="IEC 60870-5-101 (Serial and Ethernet)">
+    `IEC101_SERIAL` (type ID 35) and `IEC101_ETHERNET` (type ID 36) implement the IEC 60870-5-101 telecontrol protocol used in European power grid automation.
+  </Accordion>
+
+  <Accordion title="OPC DA and OPC UA">
+    `OPC` (type ID 32) connects to classic OPC DA servers using DCOM. `OPC_UA` (type ID 48) connects to modern OPC UA servers, supporting both polling and monitored-item subscriptions.
+  </Accordion>
+
+  <Accordion title="M-Bus (wired metering)">
+    `M_BUS` (type ID 20) reads energy meters and sensors using the M-Bus (Meter-Bus) wired protocol, widely used for heat, gas, and electricity metering in Europe.
+  </Accordion>
+
+  <Accordion title="NMEA 0183 (GPS)">
+    `NMEA` (type ID 13) parses NMEA 0183 sentences from a serial GPS receiver, exposing latitude, longitude, speed, and other fix data as individual data points.
+  </Accordion>
+
+  <Accordion title="Additional drivers">
+    Further drivers bundled in the codebase include:
+
+    | Name | Type ID | Description |
+    |------|---------|-------------|
+    | Persistent | 24 | Receives point values pushed from another Scada-LTS instance |
+    | POP3 | 12 | Parses incoming emails from a POP3 mailbox |
+    | JMX | 26 | Reads JMX MBean attributes from a Java application |
+    | VMStat | 17 | Reads Linux `vmstat` OS metrics |
+    | 1-Wire | 8 | Reads Dallas/Maxim 1-Wire temperature sensors |
+    | Galil | 14 | Interfaces with Galil motion controllers |
+    | OpenV4J | 19 | Reads Viessmann heating system data |
+    | Pachube / Xively | 23 | Reads from the Pachube/Xively cloud feed API |
+    | ASCII File | 33 | Tails a text file and parses values from each line |
+    | ASCII Serial | 34 | Parses ASCII frames from a serial port |
+    | Siemens S7 (Nodave) | 37 | Reads Siemens S7 PLCs via the libnodave library |
+    | Alpha 2 | 39 | Reads Mitsubishi Alpha 2 controllers |
+    | Radiuino | 41 | Reads Radiuino wireless sensor nodes |
+    | EBI25 | 16 | Reads EBRO EBI 25 temperature data loggers |
+    | Viconics | 18 | Reads Viconics HVAC controllers |
+  </Accordion>
+</AccordionGroup>
+
+## Managing data sources
+
+### Enable and disable
+
+Each data source has an `enabled` boolean flag (`DataSourceVO.java:417`). When disabled, the driver stops polling or disconnects from the broker, and all its data points stop receiving new values. You can toggle a data source without deleting it, which is useful for maintenance windows.
+
+### Export ID (XID)
+
+Every data source is assigned an **XID** (Export ID) with the prefix `DS_`, for example `DS_0001` (`DataSourceVO.java:380`). The XID is a stable, human-readable identifier used when importing and exporting configurations as JSON. Unlike the internal numeric `id`, the XID persists across database migrations and can be set manually.
+
+```json
+{
+  "xid": "DS_BOILER_MODBUS",
+  "type": "MODBUS_IP",
+  "name": "Boiler PLC",
+  "enabled": true,
+  "alarmLevels": {
+    "POLL_ABORTED": "URGENT"
+  }
+}
+```
+
+### Alarm levels per event
+
+Data sources raise typed events (e.g. `POLL_ABORTED`, `DATA_SOURCE_EXCEPTION`) when communication fails. Each event type can be assigned an independent alarm level — `NONE`, `INFORMATION`, `URGENT`, `CRITICAL`, or `LIFE_SAFETY` — so you can tune alert severity per driver. These levels are stored in the `alarmLevels` map on the data source VO (`DataSourceVO.java:421`).
+
+<Note>
+  Disabling a data source does not delete its historical data. All previously logged point values remain in the archive and are accessible through reports and charts.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Configure individual measurements and control signals within a data source.
+  </Card>
+  <Card title="Alarms and Events" icon="bell" href="/concepts/alarms-events">
+    React to data source communication failures with event handlers.
+  </Card>
+  <Card title="Graphical Views" icon="display" href="/concepts/graphical-views">
+    Visualise live data source values on custom process diagrams.
+  </Card>
+  <Card title="Watch List" icon="list-check" href="/guide/watchlist">
+    Monitor data points from multiple data sources in a single live table.
+  </Card>
+</CardGroup>

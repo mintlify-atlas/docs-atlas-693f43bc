@@ -1,0 +1,152 @@
+---
+title: "Graphical Views: Building HMI Displays in Scada-LTS"
+description: "Build real-time SCADA displays in Scada-LTS using the drag-and-drop graphical view builder. Place data point components on process background images."
+---
+
+Graphical views are the primary operator interface in Scada-LTS. Each view is a web-based P&ID or HMI display — a canvas with a configurable resolution, an optional background image representing the physical process, and a collection of interactive components that show live data point values and accept operator input. Views update in real time without page reloads, making them suitable for continuous process monitoring at operator workstations, control room displays, and mobile devices.
+
+## The view canvas
+
+Every graphical view has a canvas with a pixel resolution (width × height). The default canvas in `GraphicalViewPage.vue` is 1080 × 720 pixels. The canvas renders a background image (stored as a URL in `graphicalPage.backgroundFilename`) and all placed components on top of it using absolute pixel positioning.
+
+When **edit mode** is active, a toolbar appears above the canvas with alignment and distribution tools — left-align, center, right-align, top-align, distribute horizontally, distribute vertically, and z-order controls (move to top, move to bottom). You can also toggle individual component visibility without deleting them, which is useful for hiding diagnostic components during normal operations.
+
+## View components
+
+The component library is defined in `ViewComponentDefinitions.js`. Each component is a Vue.js widget that subscribes to one or more data point values and re-renders whenever a new value arrives.
+
+<AccordionGroup>
+  <Accordion title="Simple Point (any data type)">
+    Displays the current formatted value of any data point as text. The rendering is controlled by the point's text renderer — for example, a numeric point might show `"23.7 °C"` while a binary point shows `"Running"` or `"Stopped"`. This is the most general-purpose component.
+  </Accordion>
+
+  <Accordion title="Binary Graphic">
+    Renders one of two images depending on whether the linked binary data point is `true` or `false`. Use it to show a pump as green/running or red/stopped, an open or closed valve symbol, or any other two-state indicator. The two images are selected from the available image sets.
+  </Accordion>
+
+  <Accordion title="Multistate Graphic">
+    Assigns a distinct image to each possible integer state of a multistate data point. For example, a motor controller with states 0=Off, 1=Auto, 2=Manual can display three different icon images. The mapping is configured in the component editor.
+  </Accordion>
+
+  <Accordion title="Analog Graphic">
+    Renders an image set based on the numeric value of a data point falling within defined ranges. For example, a tank level indicator might show an empty icon below 10%, a half-full icon from 10–80%, and a full icon above 80%. Ranges are configured in the component properties.
+  </Accordion>
+
+  <Accordion title="ON/OFF Button">
+    A clickable control that writes a binary value to a settable data point. Operators can toggle a digital output directly from the graphical view. The button requires the operator to have write permission on the target data point.
+  </Accordion>
+
+  <Accordion title="Alarm List">
+    Displays a live scrolling list of active alarms filtered by alarm level or data point. Embed this component in a view to give operators immediate visibility into active conditions without leaving the process display.
+  </Accordion>
+
+  <Accordion title="Image Chart">
+    Renders a historical trend chart for one or more data points as an inline image within the view. The time range and rendering options are configured per component.
+  </Accordion>
+
+  <Accordion title="HTML Component">
+    A freeform HTML element. You can embed arbitrary HTML, CSS, and inline scripts to create custom indicators, labels, or styled containers. Use this for text annotations, plant area labels, or branded panel headers.
+  </Accordion>
+
+  <Accordion title="Link">
+    A clickable hyperlink that navigates to another graphical view, an external URL, or a specific page within Scada-LTS. Use links to build multi-view navigation hierarchies — for example, a site overview view with links that drill down to individual equipment views.
+  </Accordion>
+
+  <Accordion title="Server-side Script">
+    Executes a stored server-side JavaScript and renders its output as text in the view. This allows computed display values that are not available as a single data point.
+  </Accordion>
+</AccordionGroup>
+
+## Background images
+
+Any graphical view can use a custom background image — typically a P&ID diagram, plant floor plan, equipment schematic, or geographic map — uploaded as a PNG, JPG, or SVG file. The background image file path is stored in `graphicalPage.backgroundFilename` and served from the Scada-LTS static file directory.
+
+Once a background is set, components are placed on top of it using pixel coordinates. The workflow is to import or draw the process diagram externally, upload it to Scada-LTS, assign it as the view background, and then drag data point components onto the relevant positions.
+
+<Tip>
+  Use SVG backgrounds for process diagrams. SVG scales cleanly to any canvas resolution and can be styled with CSS, making it easy to produce crisp displays on both standard and high-DPI monitors.
+</Tip>
+
+## Anonymous (public) views
+
+A graphical view can be made accessible without login by setting its **anonymous access** level. The `anonymousAccess` property on the view controls what unauthenticated visitors can do:
+
+| Access level | Value | Behaviour |
+|-------------|-------|-----------|
+| None | 0 | Login required |
+| Read | 1 | View is visible without login; no control |
+| Set | 2 | View is visible and writable without login |
+
+Anonymous views are served through the `AnonymousViewPage.vue` route. This is useful for public-facing status boards, lobby displays, or kiosk screens where requiring credentials would be impractical.
+
+<Warning>
+  Granting anonymous **Set** access allows anyone on the network to write values to the data points in that view. Only use this level on isolated networks or for non-critical indicators.
+</Warning>
+
+## View hierarchy
+
+Graphical views can be organized into a hierarchy of folders using the **View Hierarchy** configuration. The hierarchy appears as a tree in the left navigation panel, allowing operators to navigate a large plant with dozens of views without scrolling through a flat list. The hierarchy is purely organizational — it does not affect view rendering or access control.
+
+A typical hierarchy might look like:
+
+```
+Plant Overview
+├── Utilities
+│   ├── Compressed Air
+│   └── Cooling Water
+├── Production Line 1
+│   ├── Mixing
+│   ├── Reaction
+│   └── Separation
+└── Packaging
+```
+
+## REST API
+
+Graphical views are accessible through the Scada-LTS REST API. Key endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/view/getAll` | List all views the current user can access |
+| `GET` | `/api/view/getByXid/{xid}` | Fetch a single view by its XID |
+| `POST` | `/api/view/createView` | Create a new graphical view |
+
+The API returns view metadata (name, XID, resolution, background filename, anonymous access level) and the full component list as JSON.
+
+## Creating your first graphical view
+
+<Steps>
+  <Step title="Prepare a background image">
+    Create or export a process diagram (P&ID, floor plan, or equipment schematic) as a PNG or SVG. Keep the dimensions close to your intended canvas resolution — 1080 × 720 pixels is a good starting point for a 16:9 display.
+  </Step>
+  <Step title="Create the view">
+    Navigate to **Graphical Views** in the main menu and click **New View**. Enter a name, set the canvas width and height, and save. Scada-LTS assigns a unique XID with the prefix `GV_`.
+  </Step>
+  <Step title="Upload and set the background">
+    In the view editor, click **Background Image** and upload your process diagram file. The image appears as the canvas background immediately.
+  </Step>
+  <Step title="Add components">
+    Click **Add Component** to open the component picker. Select a component type, choose the target data point from the point hierarchy tree, and click **Place**. The component appears on the canvas at a default position.
+  </Step>
+  <Step title="Position and configure">
+    Drag the component to the correct location on the process diagram. Click the edit icon (pencil) in the toolbar to open the component editor and configure display options — text renderer, image set, colour, size, and label.
+  </Step>
+  <Step title="Save and publish">
+    Click **Save View** to persist the layout. Exit edit mode to switch to the live monitoring view. If you want the view accessible without login, set the anonymous access level in the view properties.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Data Points" icon="circle-dot" href="/concepts/data-points">
+    Understand data types and how they map to graphical view component types.
+  </Card>
+  <Card title="Alarms and Events" icon="bell" href="/concepts/alarms-events">
+    Embed alarm list components in your process views.
+  </Card>
+  <Card title="Data Sources" icon="database" href="/concepts/data-sources">
+    Configure the protocol drivers that supply live data to your views.
+  </Card>
+  <Card title="Watch List" icon="list-check" href="/guide/watchlist">
+    Monitor raw point values in tabular form alongside your graphical views.
+  </Card>
+</CardGroup>

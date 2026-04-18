@@ -1,0 +1,65 @@
+---
+title: "Scada-LTS: An Open Source Web-Based SCADA Platform"
+description: "Scada-LTS is a free, open-source SCADA platform built on Java and Vue.js, with support for Modbus, BACnet, SNMP, MQTT, and OPC-UA protocols."
+---
+
+Scada-LTS is an open-source, web-based Supervisory Control and Data Acquisition (SCADA) system designed for industrial environments. Built as a community-driven successor to ScadaBR, it provides a full-featured platform for connecting to industrial devices, collecting real-time data, visualizing process states, and responding to alarms — all through a browser-based interface that runs on any modern operating system.
+
+## What Scada-LTS does
+
+Industrial facilities rely on SCADA systems to monitor equipment, collect sensor readings, detect fault conditions, and generate historical reports. Scada-LTS delivers all of these capabilities in a single deployable application. It supports a wide range of industrial communication protocols out of the box, making it possible to connect to PLCs, RTUs, sensors, and other field devices without proprietary middleware.
+
+The system's web-based architecture means operators can monitor and control processes from any networked workstation or device without installing dedicated client software. Administrators manage the system through the same interface, configuring data sources, defining alarm conditions, and controlling user access.
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Data acquisition" icon="database" href="/concepts/data-sources">
+    Connect to industrial devices using Modbus TCP/RTU, BACnet, SNMP, MQTT, OPC-UA, SQL, and virtual data sources. Each protocol is configured as a named data source with one or more data points.
+  </Card>
+  <Card title="Visualization" icon="chart-line" href="/concepts/graphical-views">
+    Build graphical synoptic views, trend charts, and watchlists. The Vue.js-based frontend provides responsive dashboards that update in real time as field values change.
+  </Card>
+  <Card title="Alarms and events" icon="bell" href="/concepts/alarms-events">
+    Define detector conditions on any data point. When a condition is met, Scada-LTS raises an event, logs it, and can send notifications by email or SMS through configurable mailing lists and event handlers.
+  </Card>
+  <Card title="Reporting" icon="file-chart-column" href="/guide/reports">
+    Generate scheduled or on-demand reports from historical point values. Export data as CSV for further analysis in external tools.
+  </Card>
+  <Card title="REST API" icon="code" href="/api/overview">
+    A documented REST API (OpenAPI 3 specification) exposes data sources, data points, point values, events, views, users, and system settings for integration with external applications.
+  </Card>
+  <Card title="MQTT messaging" icon="radio" href="/concepts/data-sources">
+    Built-in MQTT support lets Scada-LTS both subscribe to and publish messages on MQTT topics, enabling integration with IoT devices and message brokers such as HiveMQ.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+Scada-LTS is a Java web application packaged as a WAR file and deployed on Apache Tomcat. The backend is written in Java 11 and handles all data acquisition, event processing, alarm management, and API serving. The frontend is a Vue.js single-page application bundled into the WAR at build time, communicating with the backend through a combination of DWR (Direct Web Remoting) endpoints and REST API calls.
+
+Data is persisted in a MySQL 8 database. The JDBC connection pool is configured in Tomcat's `context.xml`, with a named resource (`jdbc/scadalts`) that the application looks up at startup. In production Docker deployments, the database container and the application container are connected through Docker networking, with the application waiting for the database to become available before starting Tomcat.
+
+| Layer | Technology |
+|---|---|
+| Application server | Apache Tomcat 9.0 |
+| Backend language | Java 11 |
+| Frontend framework | Vue.js |
+| Database | MySQL 8 |
+| Build tool | Gradle 6.8.1 |
+| Container runtime | Docker / Docker Compose |
+
+## License
+
+Scada-LTS is released under the [GNU General Public License v2.0 (GPL-2.0)](https://github.com/SCADA-LTS/Scada-LTS/blob/develop/LICENSE). You are free to use, modify, and distribute the software under the terms of that license.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run Scada-LTS with Docker Compose in under five minutes.
+  </Card>
+  <Card title="Installation" icon="server" href="/installation">
+    Build from source, deploy a WAR file, or use Docker in production.
+  </Card>
+</CardGroup>

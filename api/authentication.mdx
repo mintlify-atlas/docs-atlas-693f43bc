@@ -1,0 +1,169 @@
+---
+title: "Authenticate with the Scada-LTS REST API via Session"
+description: "Log in to Scada-LTS via the REST API to obtain a session cookie, then include it in subsequent requests to access protected endpoints."
+---
+
+The Scada-LTS REST API uses session-based authentication. There are no API keys or bearer tokens — instead, you send your credentials once to the login endpoint, and the server sets a session cookie in the response. You then include that cookie in every subsequent request. This mirrors the same session mechanism used by the Scada-LTS web UI.
+
+## Authentication flow
+
+<Steps>
+  <Step title="Send a login request">
+    Make a GET request to `/api/auth/{username}/{password}`, substituting your Scada-LTS credentials. Use a cookie jar (`-c cookies.txt` in curl) to capture the session cookie returned by the server.
+
+    ```bash
+    curl -c cookies.txt "http://localhost:8080/Scada-LTS/api/auth/admin/yourpassword"
+    ```
+
+    A `200 OK` response means the login succeeded and the session cookie has been written to `cookies.txt`.
+  </Step>
+  <Step title="Use the session cookie in subsequent requests">
+    Pass the saved cookie jar (`-b cookies.txt`) with every follow-up request. The server reads the session cookie to identify your account and authorize the operation.
+
+    ```bash
+    curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/datapoints"
+    ```
+  </Step>
+  <Step title="Log out when finished">
+    End the session explicitly by calling the logout endpoint. This invalidates the server-side session so the cookie can no longer be used.
+
+    ```bash
+    curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/auth/logout/admin"
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Credentials are passed as plain text in the URL path. Always use HTTPS in production to prevent them from being intercepted in transit. Never use HTTP in an environment accessible over an untrusted network.
+</Warning>
+
+---
+
+## Endpoints
+
+### GET /api/auth/{username}/{password}
+
+Authenticates a user and creates a server-side session. On success, the server sets a session cookie in the `Set-Cookie` response header.
+
+<ParamField path="username" type="string" required>
+  Username of the Scada-LTS user account.
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  Password for the user account.
+</ParamField>
+
+**Response:** `200 OK` on successful login. The response sets a session cookie that must be included in all subsequent requests.
+
+```bash
+curl -c cookies.txt "http://localhost:8080/Scada-LTS/api/auth/admin/yourpassword"
+```
+
+---
+
+### GET /api/auth/logout/{username}
+
+Invalidates the current session for the specified user. After calling this endpoint, the session cookie is no longer valid.
+
+<ParamField path="username" type="string" required>
+  Username of the account to log out. Must match the currently authenticated session.
+</ParamField>
+
+**Response:** `200 OK` when the session has been successfully invalidated.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/auth/logout/admin"
+```
+
+---
+
+### GET /api/auth/isLogged/{username}
+
+Checks whether a given user currently has an active session. Useful for verifying that a session is still valid before making additional requests.
+
+<ParamField path="username" type="string" required>
+  Username to check login status for.
+</ParamField>
+
+**Response:** `200 OK` with a boolean value indicating whether the user is currently logged in.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/auth/isLogged/admin"
+```
+
+---
+
+### GET /api/auth/isRoleAdmin
+
+Returns whether the currently authenticated user has administrator privileges. Does not require a path parameter — the server identifies the user from the active session cookie.
+
+**Response:** `200 OK` with a boolean value. Returns `true` if the session user has the admin role.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/auth/isRoleAdmin"
+```
+
+---
+
+### GET /api/auth/isRoleUser
+
+Returns whether the currently authenticated user has the standard user role (that is, does not have admin privileges). The inverse of `isRoleAdmin`.
+
+**Response:** `200 OK` with a boolean value. Returns `true` if the session user is a non-admin user.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/auth/isRoleUser"
+```
+
+---
+
+### GET /api/auth/user
+
+Returns basic profile information for the currently authenticated user. The server identifies the account from the active session cookie — no path or query parameters are required.
+
+**Response:** `200 OK` with a JSON object describing the current user.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/Scada-LTS/api/auth/user"
+```
+
+Example response:
+
+```json
+{
+  "id": 1,
+  "username": "admin",
+  "admin": true,
+  "email": "admin@example.com"
+}
+```
+
+<ResponseField name="id" type="number">
+  Unique numeric identifier for the user account.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  The login username for the account.
+</ResponseField>
+
+<ResponseField name="admin" type="boolean">
+  Whether the user has administrator privileges. Administrators can access all data sources, data points, and system settings.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address associated with the user account. Used for alarm notifications.
+</ResponseField>
+
+---
+
+## Session management
+
+<Note>
+  Sessions expire after a period of inactivity. If you receive a `401 Unauthorized` response on a request that previously worked, your session has expired. Re-authenticate by calling `/api/auth/{username}/{password}` again to obtain a fresh session cookie.
+</Note>
+
+When running automated scripts or integrations, consider the following practices:
+
+- Store the session cookie in a file (e.g., `cookies.txt`) and reuse it across requests rather than logging in for every call.
+- Check `/api/auth/isLogged/{username}` at the start of a script to confirm the session is still active before proceeding.
+- Log out explicitly at the end of a session to free server-side resources and reduce the risk of session hijacking.

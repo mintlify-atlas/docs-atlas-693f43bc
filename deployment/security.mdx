@@ -1,0 +1,208 @@
+---
+title: "Scada-LTS Security Hardening and Network Best Practices"
+description: "Secure your Scada-LTS deployment by changing default credentials, restricting network access, configuring HTTPS, and following responsible disclosure."
+---
+
+Scada-LTS communicates directly with industrial control equipment — PLCs, RTUs, sensors, and MQTT-connected field devices. A compromised SCADA system can have physical consequences well beyond a typical web application. This page describes the minimum steps required before exposing any Scada-LTS instance to a network, along with guidance on network segmentation, HTTPS configuration, and responsible vulnerability disclosure.
+
+<Warning>
+  Never expose Scada-LTS directly to the internet without completing every step on this page. The default Docker Compose configuration uses placeholder credentials (`root`/`root`) and binds several ports to all network interfaces. Deploying it unchanged is unsafe.
+</Warning>
+
+## Critical first steps
+
+Complete these steps before the system processes any live data.
+
+<Steps>
+  <Step title="Change the default admin password">
+    The default Scada-LTS administrator account uses the credentials `admin` / `admin`. Log in at `http://<host>:8080/Scada-LTS` immediately after first boot and change the password to a strong, unique value.
+
+    Navigate to **Administration → Users**, select the `admin` user, and update the password field.
+  </Step>
+  <Step title="Change all database credentials">
+    The default `docker-compose.yml` uses `root` as both the MySQL root password and the application user password. Replace them with strong, randomly generated values in your compose file:
+
+    ```yaml
+    environment:
+      - MYSQL_ROOT_PASSWORD=<strong-random-password>
+      - MYSQL_USER=scadalts_app
+      - MYSQL_PASSWORD=<strong-random-password>
+      - MYSQL_DATABASE=scadalts
+    ```
+
+    After changing `MYSQL_USER` and `MYSQL_PASSWORD`, update the matching values in `context.xml` (or your volume-mounted override) so the application can still connect:
+
+    ```xml
+    username="scadalts_app"
+    password="<strong-random-password>"
+    ```
+  </Step>
+  <Step title="Restrict database port 3306">
+    The default compose file publishes MySQL port 3306 on all host interfaces (`0.0.0.0:3306`). This port must never be reachable from the internet or any untrusted network segment. Remove the host-side port mapping if external access to MySQL is not required:
+
+    ```yaml
+    database:
+      # Remove or comment out the ports block:
+      # ports:
+      #   - "3306:3306"
+      expose: ["3306"]   # internal Docker network only
+    ```
+
+    If you do need external database access (for administration tools), restrict the binding to a trusted management interface:
+
+    ```yaml
+    ports:
+      - "127.0.0.1:3306:3306"
+    ```
+  </Step>
+  <Step title="Put Scada-LTS behind a reverse proxy with HTTPS">
+    Tomcat listens on port 8080 over plain HTTP. Configure a reverse proxy in front of it to terminate TLS and redirect all HTTP traffic to HTTPS. Both Nginx and Apache are commonly used for this purpose.
+
+    <Tabs>
+      <Tab title="Nginx">
+        ```nginx
+        server {
+            listen 80;
+            server_name scada.example.com;
+            return 301 https://$host$request_uri;
+        }
+
+        server {
+            listen 443 ssl;
+            server_name scada.example.com;
+
+            ssl_certificate     /etc/ssl/certs/scada.example.com.crt;
+            ssl_certificate_key /etc/ssl/private/scada.example.com.key;
+            ssl_protocols       TLSv1.2 TLSv1.3;
+            ssl_ciphers         HIGH:!aNULL:!MD5;
+
+            location /Scada-LTS/ {
+                proxy_pass         http://127.0.0.1:8080/Scada-LTS/;
+                proxy_set_header   Host $host;
+                proxy_set_header   X-Real-IP $remote_addr;
+                proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header   X-Forwarded-Proto $scheme;
+            }
+        }
+        ```
+      </Tab>
+      <Tab title="Apache">
+        ```apache
+        <VirtualHost *:80>
+            ServerName scada.example.com
+            Redirect permanent / https://scada.example.com/
+        </VirtualHost>
+
+        <VirtualHost *:443>
+            ServerName scada.example.com
+
+            SSLEngine on
+            SSLCertificateFile    /etc/ssl/certs/scada.example.com.crt
+            SSLCertificateKeyFile /etc/ssl/private/scada.example.com.key
+
+            ProxyPreserveHost On
+            ProxyPass        /Scada-LTS/ http://127.0.0.1:8080/Scada-LTS/
+            ProxyPassReverse /Scada-LTS/ http://127.0.0.1:8080/Scada-LTS/
+
+            RequestHeader set X-Forwarded-Proto "https"
+        </VirtualHost>
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Restrict Tomcat port 8080 to internal network or reverse proxy only">
+    Once a reverse proxy handles HTTPS, Tomcat's port 8080 should not be reachable from the internet. Bind it to localhost only:
+
+    ```yaml
+    scadalts:
+      ports:
+        - "127.0.0.1:8080:8080"
+    ```
+
+    If the reverse proxy runs on a different host, restrict access using your firewall or security group rules to allow port 8080 only from the proxy's IP address.
+  </Step>
+</Steps>
+
+## MQTT broker security
+
+The default compose file starts HiveMQ 4 with no authentication configured. Port 1883 (unencrypted MQTT) should be treated with the same care as the database port.
+
+<Warning>
+  MQTT port 1883 carries raw, unencrypted messages between Scada-LTS and field devices. Do not expose it to untrusted networks. A client that can publish to this broker can inject false sensor readings into the SCADA system.
+</Warning>
+
+Minimum steps for the MQTT broker:
+
+- **Restrict port 1883** to the internal Docker network or a dedicated OT network segment. If no external MQTT clients need to connect, remove the host-side port binding entirely.
+- **Enable authentication** in HiveMQ by providing a configuration file that requires a username and password. The dev compose file shows how to set default credentials via environment variables:
+
+  ```yaml
+  mqtt:
+    environment:
+      HIVEMQ_DEFAULT_USER: "scadalts_mqtt"
+      HIVEMQ_DEFAULT_PASS: "<strong-random-password>"
+  ```
+
+- **Use MQTT over TLS (port 8883)** if field devices communicate over any network that is not physically isolated. Configure HiveMQ with a TLS listener and supply a valid certificate.
+
+## Role-based access control
+
+Scada-LTS supports user roles. Apply the principle of least privilege to all accounts:
+
+<CardGroup cols={2}>
+  <Card title="Administrator accounts" icon="shield-halved">
+    Reserve admin-level accounts for personnel who configure data sources, manage users, and administer the system. Do not use admin accounts for read-only monitoring tasks.
+  </Card>
+  <Card title="Operator accounts" icon="user">
+    Create operator-level accounts with access limited to the specific views and data points required for their role. Operators should not be able to modify data source configuration.
+  </Card>
+  <Card title="Shared accounts" icon="users-slash">
+    Avoid shared accounts. Every user should have an individual login so that access logs can attribute actions to a specific person.
+  </Card>
+  <Card title="Password policy" icon="key">
+    Enforce strong, unique passwords for all accounts. Scada-LTS does not enforce a password policy by default — apply organisational controls or integrate with an LDAP/AD directory.
+  </Card>
+</CardGroup>
+
+## Network segmentation
+
+Scada-LTS is an OT (Operational Technology) application that bridges the IT network and field devices. Treat the host running Scada-LTS as a DMZ node with strict firewall rules on both sides.
+
+<Info>
+  Industrial best practice (IEC 62443, NIST SP 800-82) recommends placing SCADA servers in a dedicated OT DMZ that has no direct inbound access from the corporate IT network or the internet, and only controlled, protocol-specific outbound access to the field device network.
+</Info>
+
+Recommended network rules:
+
+| Direction | Source | Destination | Port(s) | Action |
+|---|---|---|---|---|
+| Inbound | Reverse proxy | Scada-LTS host | 8080 | Allow |
+| Inbound | Admin workstation | Scada-LTS host | 8080 | Allow |
+| Inbound | Any | Scada-LTS host | 3306, 1883 | Deny |
+| Inbound | Internet | Scada-LTS host | Any | Deny |
+| Outbound | Scada-LTS host | Field devices | Protocol-specific | Allow |
+| Outbound | Scada-LTS host | Internet | Any | Deny (or allowlist) |
+
+## Reporting security vulnerabilities
+
+The Scada-LTS security policy asks that vulnerabilities be reported privately before public disclosure.
+
+<Steps>
+  <Step title="Contact the security team">
+    Send a report to **scadalts-support (at) softq.pl**. Include:
+    - A description of the vulnerability
+    - Steps to reproduce the issue
+    - The affected Scada-LTS version(s)
+    - Any known mitigations or a proposed fix
+  </Step>
+  <Step title="Wait for acknowledgement">
+    The team will evaluate the report and contact you with the outcome. If a fix is warranted, it will be developed and released before the vulnerability is made public.
+  </Step>
+  <Step title="Coordinated disclosure">
+    Do not disclose the vulnerability publicly until the team has either released a fix or communicated a decision. Once a fix is published, you are free to disclose. Reporters who follow this process are credited in the release notes.
+  </Step>
+</Steps>
+
+<Note>
+  If you have already developed a patch, attach it to your report or summarise the fix. Contributions that include a fix are given priority review.
+</Note>

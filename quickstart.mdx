@@ -1,80 +1,152 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Getting Started with Scada-LTS Using Docker Compose"
+description: "Run Scada-LTS with Docker Compose in minutes. This guide covers MySQL setup, accessing the web UI, and configuring your first data source."
 ---
 
-## Get started in three steps
+The fastest way to run Scada-LTS is with Docker Compose. The official `docker-compose.yml` starts three services — a MySQL 8 database, the Scada-LTS application on Tomcat 9, and a HiveMQ MQTT broker — and wires them together automatically. You do not need to install Java, Tomcat, or MySQL on your host machine.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+- [Docker Engine](https://docs.docker.com/engine/install/) 20.10 or later
+- [Docker Compose](https://docs.docker.com/compose/install/) v2 (the `docker compose` plugin, not the standalone `docker-compose` binary)
+- Ports `8080`, `3306`, `1883`, and `8081` available on your machine
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Info>
+  The Scada-LTS application container is configured with `-Xmx2G -Xms2G` JVM heap settings. Make sure Docker has at least **3 GB of memory** allocated to containers before starting.
+</Info>
 
-### Step 2: Deploy your changes
+## Steps
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Steps>
+  <Step title="Create the docker-compose.yml file">
+    Create a new directory for your Scada-LTS deployment and save the following file as `docker-compose.yml` inside it. This is the exact content from the official repository.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```yaml docker-compose.yml
+    # Docker compose file to manage your deployed images.
+    # Use MySQL server 8 and latest Scada-LTS local build.
+    version: '3'
+    services:
+        database:
+            container_name: mysql
+            image: mysql/mysql-server:8.0.32
+            ports:
+                - "3306:3306"
+            environment:
+                - MYSQL_ROOT_PASSWORD=root
+                - MYSQL_USER=root
+                - MYSQL_PASSWORD=root
+                - MYSQL_DATABASE=scadalts
+            expose: ["3306"]
+            volumes:
+                - ./db_data:/var/lib/mysql:rw
+                - ./db_conf:/etc/mysql:ro
+            command: --log_bin_trust_function_creators=1
+        scadalts:
+            image: scadalts/scadalts:latest
+            environment:
+                - CATALINA_OPTS=-Xmx2G -Xms2G
+            ports:
+                - "8080:8080"
+            depends_on:
+                - database
+            expose: ["8080", "8000"]
+            volumes:
+                - ./tomcat_log:/usr/local/tomcat/logs:rw
+            links:
+                - database:database
+            command:
+                - /usr/bin/wait-for-it
+                - --host=database
+                - --port=3306
+                - --timeout=30
+                - --strict
+                - --
+                - /usr/local/tomcat/bin/catalina.sh
+                - run
+        mqtt:
+            image: hivemq/hivemq4:latest
+            ports:
+                - "8081:8080"
+                - "1883:1883"
+            expose: [ "8081", "1883" ]
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    The `scadalts` service uses `wait-for-it` to delay Tomcat startup until MySQL is accepting connections on port 3306. Database data is persisted in a `./db_data` volume on your host so it survives container restarts.
+  </Step>
 
-### Step 3: Go live
+  <Step title="Start the services">
+    From the directory containing your `docker-compose.yml`, run:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash
+    docker compose up -d
+    ```
+
+    Docker pulls the `scadalts/scadalts:latest`, `mysql/mysql-server:8.0.32`, and `hivemq/hivemq4:latest` images on first run. Subsequent starts are faster.
+
+    Watch the application log to confirm Tomcat has started:
+
+    ```bash
+    docker compose logs -f scadalts
+    ```
+
+    Look for a line containing `Server startup in` followed by a time in milliseconds. This indicates Tomcat is ready.
+
+    <Note>
+      First startup takes longer because MySQL initialises the `scadalts` database schema. Allow up to 60 seconds before the application becomes available.
+    </Note>
+  </Step>
+
+  <Step title="Open the web interface">
+    Once Tomcat has started, open your browser and navigate to:
+
+    ```
+    http://localhost:8080/Scada-LTS
+    ```
+
+    You should see the Scada-LTS login page.
+
+    <Tip>
+      The context path is `/Scada-LTS` (capital S and capital LTS). Navigating to `http://localhost:8080/` returns a 404 because no root application is deployed.
+    </Tip>
+  </Step>
+
+  <Step title="Log in with default credentials">
+    Use the following credentials on your first login:
+
+    | Field | Value |
+    |---|---|
+    | Username | `admin` |
+    | Password | `admin` |
+
+    <Warning>
+      Change the default admin password immediately after your first login. Navigate to **Administration → Users**, select the `admin` user, and set a strong password before exposing the instance to a network.
+    </Warning>
+  </Step>
+
+  <Step title="Add your first data source">
+    A Virtual data source lets you verify the system is working without any physical hardware.
+
+    1. In the top navigation, click **Data Sources**.
+    2. Click **Add data source** and select **Virtual data source** from the type list.
+    3. Enter a name such as `Test Virtual Source` and click **Save**.
+    4. With the data source open, click **Add data point**.
+    5. Choose **Numeric** as the point type and set the update period to `5` seconds.
+    6. Enter a name such as `Temperature Sim` and click **Save**.
+    7. Enable the data source by clicking the toggle next to its name.
+
+    The data point now appears in the watchlist and begins generating simulated numeric values every five seconds. You can add it to a graphical view or create an alarm detector to explore other features.
+  </Step>
+</Steps>
+
+## MQTT broker
+
+The `mqtt` service in the Compose file runs [HiveMQ 4](https://www.hivemq.com/hivemq/mqtt-broker/), a full-featured MQTT broker. It listens on:
+
+- `1883` — standard MQTT (unencrypted)
+- `8081` — HiveMQ web management console
+
+To connect an MQTT data source in Scada-LTS to the local broker, use `mqtt` as the hostname (Docker's internal DNS resolves it within the Compose network) and `1883` as the port. From your host machine, use `localhost:1883`.
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+This quickstart uses the pre-built `scadalts/scadalts:latest` Docker image, which is suitable for evaluation and small deployments. For production use, custom builds from source, or WAR-based deployments on an existing Tomcat server, see the full [installation guide](/installation).

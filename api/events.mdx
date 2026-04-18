@@ -1,0 +1,302 @@
+---
+title: "REST API: Events — Query, Acknowledge, and Handlers"
+description: "Retrieve and acknowledge Scada-LTS events using the Events API. Query events for specific data points and manage alarm acknowledgments."
+---
+
+The Events API gives you programmatic access to the event log in Scada-LTS. Events are generated when data point conditions trigger configured detectors — for example, when a value exceeds a threshold or a binary point changes state. You can query the event history for a specific data point with optional pagination, acknowledge individual events to clear active alarms, and inspect the event handlers that are configured to respond to those events.
+
+All endpoints are served under `http://<host>:8080/Scada-LTS/api` and require HTTP Basic authentication.
+
+<Note>
+  The primary authentication method is session cookies — see [Authentication](/api/authentication) for the full flow. The curl examples on this page use HTTP Basic auth (`-H "Authorization: Basic ..."`) as a convenient shorthand for testing.
+</Note>
+
+---
+
+## GET /api/events/datapoint/{id}
+
+Retrieve a paginated list of events associated with a specific data point. Results are returned in reverse chronological order. The default page size is 1000 records starting at offset 0.
+
+<ParamField path="id" type="number" required>
+  The internal numeric identifier of the data point whose events you want to retrieve.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of events to return. Defaults to `1000`.
+</ParamField>
+
+<ParamField query="offset" type="number">
+  Number of records to skip before returning results. Defaults to `0`. Use with `limit` to paginate.
+</ParamField>
+
+### Response
+
+Returns an array of `EventDTO` objects.
+
+<ResponseField name="id" type="number">
+  Unique identifier for the event.
+</ResponseField>
+
+<ResponseField name="typeId" type="number">
+  Event type identifier.
+</ResponseField>
+
+<ResponseField name="typeRef1" type="number">
+  First type reference (typically the data point ID).
+</ResponseField>
+
+<ResponseField name="typeRef2" type="number">
+  Second type reference (typically the event detector index).
+</ResponseField>
+
+<ResponseField name="activeTs" type="number">
+  Unix timestamp (milliseconds) when the event became active.
+</ResponseField>
+
+<ResponseField name="rtnApplicable" type="boolean">
+  Whether a return-to-normal (RTN) transition is applicable for this event.
+</ResponseField>
+
+<ResponseField name="rtnTs" type="number">
+  Unix timestamp (milliseconds) when the event returned to normal. Null if still active.
+</ResponseField>
+
+<ResponseField name="rtnCause" type="number">
+  Code indicating the cause of the return-to-normal transition.
+</ResponseField>
+
+<ResponseField name="alarmLevel" type="number">
+  Alarm severity level: `0` = none, `1` = information, `2` = urgent, `3` = critical, `4` = life safety.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable event message.
+</ResponseField>
+
+<ResponseField name="ackTs" type="number">
+  Unix timestamp (milliseconds) when the event was acknowledged. Null if unacknowledged.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Username of the user who acknowledged the event.
+</ResponseField>
+
+<ResponseField name="ackAlternateSource" type="number">
+  Code for alternate acknowledgment sources (e.g. system auto-ack).
+</ResponseField>
+
+<ResponseField name="userComments" type="object">
+  Any user comments attached to this event.
+</ResponseField>
+
+**HTTP 200** — Returns an array of event objects for the specified data point.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/events/datapoint/12?limit=50&offset=0" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 401,
+    "typeId": 1,
+    "typeRef1": 12,
+    "typeRef2": 0,
+    "activeTs": 1713420000000,
+    "rtnApplicable": true,
+    "rtnTs": 1713423600000,
+    "rtnCause": 1,
+    "alarmLevel": 2,
+    "message": "Value exceeded high limit",
+    "ackTs": 1713424000000,
+    "username": "admin",
+    "ackAlternateSource": 0,
+    "userComments": {}
+  }
+]
+```
+
+---
+
+## GET /api/events/ack/{id}
+
+Acknowledge a specific event by its numeric event ID. Acknowledging an event marks it as reviewed and clears it from the active alarm list. This operation records the current user as the acknowledging user.
+
+<ParamField path="id" type="number" required>
+  The numeric ID of the event to acknowledge.
+</ParamField>
+
+**HTTP 200** — The event was successfully acknowledged. The response body is empty.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/events/ack/401" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+---
+
+## GET /api/eventHandler/getAll
+
+Retrieve a list of all event handlers configured in the system. Event handlers define automated responses to events — such as setting a point value, sending an email, executing a process command, or running a script.
+
+### Response
+
+Returns an array of `EventHandlerVO` objects.
+
+<ResponseField name="id" type="number">
+  Internal numeric identifier for the event handler.
+</ResponseField>
+
+<ResponseField name="xid" type="string">
+  Export identifier (XID) for the event handler.
+</ResponseField>
+
+<ResponseField name="alias" type="string">
+  Human-readable name for the handler.
+</ResponseField>
+
+<ResponseField name="handlerType" type="number">
+  Handler type code: `1` = set point, `2` = email, `3` = process, `4` = script.
+</ResponseField>
+
+<ResponseField name="disabled" type="boolean">
+  Whether this event handler is currently disabled.
+</ResponseField>
+
+<ResponseField name="targetPointId" type="number">
+  For set-point handlers: the data point ID that will be written when the event fires.
+</ResponseField>
+
+<ResponseField name="activeAction" type="number">
+  Action taken on the target point when the event becomes active.
+</ResponseField>
+
+<ResponseField name="activeValueToSet" type="string">
+  Value written to the target point on event activation.
+</ResponseField>
+
+<ResponseField name="inactiveAction" type="number">
+  Action taken when the event returns to normal.
+</ResponseField>
+
+<ResponseField name="inactiveValueToSet" type="string">
+  Value written to the target point when the event returns to normal.
+</ResponseField>
+
+<ResponseField name="activeRecipients" type="array">
+  For email handlers: list of recipient objects for active-state notifications.
+  <Expandable title="properties">
+    <ResponseField name="recipientType" type="number">
+      Recipient type code (user, mailing list, or address).
+    </ResponseField>
+    <ResponseField name="referenceId" type="number">
+      ID of the referenced user or mailing list.
+    </ResponseField>
+    <ResponseField name="referenceAddress" type="string">
+      Direct email address if recipient type is address.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="sendEscalation" type="boolean">
+  Whether escalation emails are sent if the event is not acknowledged.
+</ResponseField>
+
+<ResponseField name="escalationDelayType" type="number">
+  Time unit for the escalation delay.
+</ResponseField>
+
+<ResponseField name="escalationDelay" type="number">
+  Delay before escalation notification is sent.
+</ResponseField>
+
+<ResponseField name="sendInactive" type="boolean">
+  Whether a notification is sent when the event returns to normal.
+</ResponseField>
+
+<ResponseField name="activeProcessCommand" type="string">
+  For process handlers: shell command executed when the event activates.
+</ResponseField>
+
+<ResponseField name="inactiveProcessCommand" type="string">
+  For process handlers: shell command executed when the event returns to normal.
+</ResponseField>
+
+<ResponseField name="activeScriptCommand" type="number">
+  For script handlers: script ID executed when the event activates.
+</ResponseField>
+
+<ResponseField name="inactiveScriptCommand" type="number">
+  For script handlers: script ID executed when the event returns to normal.
+</ResponseField>
+
+<ResponseField name="typeKey" type="string">
+  Localization key for the handler type label.
+</ResponseField>
+
+**HTTP 200** — Returns an array of all event handler objects.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/eventHandler/getAll" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+[
+  {
+    "id": 5,
+    "xid": "EH_SET_MOTOR",
+    "alias": "Stop motor on alarm",
+    "handlerType": 1,
+    "disabled": false,
+    "targetPointId": 13,
+    "activeAction": 0,
+    "activeValueToSet": "0",
+    "inactiveAction": 0,
+    "inactiveValueToSet": "1",
+    "typeKey": "eventHandlers.type.setPoint"
+  }
+]
+```
+
+---
+
+## GET /api/eventHandler/get/{xid}
+
+Retrieve a single event handler by its export identifier (XID).
+
+<ParamField path="xid" type="string" required>
+  The export identifier (XID) of the event handler, for example `EH_SET_MOTOR`.
+</ParamField>
+
+### Response
+
+Returns a single `EventHandlerVO` object. Fields are identical to those described under `GET /api/eventHandler/getAll`.
+
+**HTTP 200** — Returns the matching event handler object.
+
+```bash
+curl -X GET \
+  "http://localhost:8080/Scada-LTS/api/eventHandler/get/EH_SET_MOTOR" \
+  -H "Authorization: Basic YWRtaW46YWRtaW4="
+```
+
+```json
+{
+  "id": 5,
+  "xid": "EH_SET_MOTOR",
+  "alias": "Stop motor on alarm",
+  "handlerType": 1,
+  "disabled": false,
+  "targetPointId": 13,
+  "activeAction": 0,
+  "activeValueToSet": "0",
+  "inactiveAction": 0,
+  "inactiveValueToSet": "1",
+  "typeKey": "eventHandlers.type.setPoint"
+}
+```

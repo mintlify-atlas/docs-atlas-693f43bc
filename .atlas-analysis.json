@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Scada-LTS",
+  "projectType": "saas",
+  "projectName": "Scada-LTS",
+  "projectDescription": "An open-source, web-based, multi-platform SCADA (Supervisory Control and Data Acquisition) system for industrial monitoring and control.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#73a2a9",
-    "light": "#394446",
-    "dark": "#73a2a9"
-  },
-  "favicon": "https://media.brand.dev/1215c8a2-9341-4996-bde7-f8cde2bdc128.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/SCADA-LTS/Scada-LTS"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/SCADA-LTS/Scada-LTS"
-    }
-  },
+  "primaryColor": "#73a2a9",
+  "lightColor": "#394446",
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -100,5 +87,37 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Multi-protocol data source support (Modbus, BACnet, SNMP, SQL, HTTP, MQTT, and more)",
+    "Real-time graphical views with drag-and-drop interface builder",
+    "Alarm and event management with email/SMS notifications",
+    "Historical data logging and reporting",
+    "Watch lists for monitoring multiple data points",
+    "Synoptic panel for custom SCADA visualizations",
+    "Point hierarchy for organizing data points",
+    "REST API for integration and automation",
+    "Docker-based deployment with MySQL backend",
+    "Role-based access control with user profiles"
+  ],
+  "publicApiSurface": [
+    "GET /api/auth/{username}/{password}",
+    "GET /api/auth/logout/{username}",
+    "GET /api/datapoint",
+    "GET /api/datapoints",
+    "GET /api/datasource",
+    "GET /api/datasource/getAll",
+    "GET /api/pointvalue/getValue/{xid}",
+    "PUT /api/pointvalue/setValue/{xid}",
+    "GET /api/events/datapoint/{id}",
+    "GET /api/events/ack/{id}",
+    "GET /api/view/getAll",
+    "POST /api/view/createView",
+    "GET /api/watchlist/getAll",
+    "GET /api/userProfiles/",
+    "POST /api/userProfiles/",
+    "GET /api/users/getAll",
+    "GET /api/pointHierarchy",
+    "GET /api/systemSettings"
+  ]
 }

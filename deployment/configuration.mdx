@@ -1,0 +1,218 @@
+---
+title: "Configuring Scada-LTS Database and Tomcat Settings"
+description: "Configure Scada-LTS database connections, memory settings, Tomcat context, and application properties for stable production deployments."
+---
+
+Scada-LTS is a Java web application packaged as a WAR file and deployed into Apache Tomcat. Most production configuration falls into three areas: the database connection pool defined in `context.xml`, JVM memory tuning via `CATALINA_OPTS`, and the Tomcat server itself. This page covers each of these areas using the real configuration shipped with the Docker image.
+
+## Database connection — context.xml
+
+The database connection pool is configured in `context.xml`, which is copied into the deployed application at `META-INF/context.xml` during the Docker image build. Tomcat's JDBC connection pool manager reads this file at startup and makes the data source available to the application under the JNDI name `jdbc/scadalts`.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Context>
+    <WatchedResource>WEB-INF/web.xml</WatchedResource>
+
+    <Resource name="jdbc/scadalts"
+              auth="Container"
+              type="javax.sql.DataSource"
+              factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+              testWhileIdle="true"
+              testOnBorrow="true"
+              testOnReturn="false"
+              validationQuery="/* ping */ SELECT 1"
+              validationInterval="30000"
+              timeBetweenEvictionRunsMillis="30000"
+              maxActive="80"
+              minIdle="10"
+              maxWait="10000"
+              initialSize="10"
+              removeAbandonedTimeout="1000"
+              removeAbandoned="true"
+              abandonWhenPercentageFull="75"
+              logAbandoned="true"
+              minEvictableIdleTimeMillis="30000"
+              jmxEnabled="true"
+              jdbcInterceptors="org.apache.tomcat.jdbc.pool.interceptor.ConnectionState;
+                                org.apache.tomcat.jdbc.pool.interceptor.StatementFinalizer;
+                                org.apache.tomcat.jdbc.pool.interceptor.ResetAbandonedTimer;
+                                org.apache.tomcat.jdbc.pool.interceptor.SlowQueryReport(threshold=1500)"
+              username="root"
+              password="root"
+              driverClassName="com.mysql.jdbc.Driver"
+              defaultTransactionIsolation="READ_COMMITTED"
+              connectionProperties="useSSL=false;allowPublicKeyRetrieval=true"
+              url="jdbc:mysql://database:3306/scadalts"
+    />
+</Context>
+```
+
+### Key connection pool parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `url` | `jdbc:mysql://database:3306/scadalts` | JDBC URL. The hostname `database` resolves to the MySQL container via Docker's internal DNS. Change this if your database runs on a different host. |
+| `username` / `password` | `root` / `root` | Database credentials. Must match `MYSQL_USER` and `MYSQL_PASSWORD` in your compose file. |
+| `maxActive` | `80` | Maximum number of concurrent database connections in the pool. |
+| `minIdle` | `10` | Minimum connections kept open when idle. |
+| `initialSize` | `10` | Connections opened immediately on application startup. |
+| `maxWait` | `10000` | Milliseconds to wait for a free connection before throwing an exception. |
+| `removeAbandonedTimeout` | `1000` | Seconds after which an unused borrowed connection is reclaimed. |
+| `validationQuery` | `/* ping */ SELECT 1` | SQL statement used to verify that a connection is still alive before lending it out. |
+| `defaultTransactionIsolation` | `READ_COMMITTED` | MySQL transaction isolation level used by the application. |
+
+<Note>
+  The `connectionProperties` attribute sets `useSSL=false` and `allowPublicKeyRetrieval=true`. For production deployments where the database is not co-located with the application container, enable SSL and supply the appropriate certificate configuration here.
+</Note>
+
+To override `context.xml` without rebuilding the image, mount your edited file into the container:
+
+```yaml
+volumes:
+  - ./my-context.xml:/usr/local/tomcat/webapps/Scada-LTS/META-INF/context.xml:ro
+```
+
+## Memory configuration
+
+Tomcat's JVM heap is controlled by the `CATALINA_OPTS` environment variable. The default in `docker-compose.yml` allocates 2 GB for both the initial and maximum heap:
+
+```yaml
+environment:
+  - CATALINA_OPTS=-Xmx2G -Xms2G
+```
+
+Setting `-Xms` equal to `-Xmx` prevents the JVM from growing the heap at runtime, which reduces garbage collection pauses — important for a real-time SCADA system that is expected to process data point updates continuously.
+
+### Sizing guidance
+
+| Host RAM | Recommended `CATALINA_OPTS` | Notes |
+|---|---|---|
+| 4 GB | `-Xmx2G -Xms2G` | Default. Suitable for small deployments with under 1,000 data points. |
+| 8 GB | `-Xmx4G -Xms4G` | Recommended for medium deployments or high-frequency polling. |
+| 16 GB+ | `-Xmx8G -Xms8G` | Large installations with many data sources or long history retention. |
+
+Additional JVM flags you may want to add to `CATALINA_OPTS`:
+
+```bash
+-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError
+```
+
+## Tomcat configuration
+
+The Docker image is built on `tomcat:9.0.86-jre11`. Tomcat 9 is required because Scada-LTS depends on the Jakarta EE 8 / Java Servlet 4.0 API, which Tomcat 9 implements. Tomcat 10+ uses the `jakarta.*` namespace and is incompatible without migration.
+
+The Gradle build also targets Java 11 (`sourceCompatibility = 1.11`, `targetCompatibility = 1.11`), matching the JRE bundled in the image.
+
+Default Tomcat ports used by Scada-LTS:
+
+| Port | Protocol | Purpose |
+|---|---|---|
+| `8080` | HTTP | Main web interface and REST API |
+| `8000` | JPDA | Remote Java debugger (dev mode only) |
+| `8005` | TCP | Tomcat shutdown command (container-internal) |
+| `8009` | AJP | Apache JServ Protocol — disabled by default in Tomcat 9.0.31+ |
+
+## Bundled libraries (Dockerfile)
+
+The Dockerfile copies several libraries into Tomcat's shared `lib/` directory so they are available to all deployed web applications:
+
+```dockerfile
+FROM tomcat:9.0.86-jre11
+
+COPY tomcat/lib/mysql-connector-java-5.1.49.jar  /usr/local/tomcat/lib/
+COPY tomcat/lib/activation.jar                   /usr/local/tomcat/lib/
+COPY tomcat/lib/jaxb-api-2.4.0-b180830.0359.jar  /usr/local/tomcat/lib/
+COPY tomcat/lib/jaxb-core-3.0.2.jar              /usr/local/tomcat/lib/
+COPY tomcat/lib/jaxb-runtime-2.4.0-b180830.0438.jar /usr/local/tomcat/lib/
+```
+
+| Library | Version | Purpose |
+|---|---|---|
+| `mysql-connector-java` | 5.1.49 | JDBC driver for MySQL; used by the Tomcat connection pool defined in `context.xml`. |
+| `activation` | — | JavaBeans Activation Framework, required by JAXB on JRE 11 (removed from the JDK standard library in Java 11). |
+| `jaxb-api` | 2.4.0 | JAXB API; removed from the JDK standard library in Java 11 and must be provided explicitly. |
+| `jaxb-core` | 3.0.2 | JAXB reference implementation core. |
+| `jaxb-runtime` | 2.4.0 | JAXB runtime for marshalling and unmarshalling XML (used for configuration export/import). |
+
+## Application URL path
+
+The WAR file is named `Scada-LTS.war`, which determines the Tomcat context path. The application is accessible at:
+
+```
+http://<host>:8080/Scada-LTS
+```
+
+There is no mapping to the root context (`/`) by default. If you want to serve Scada-LTS at `/`, either rename the WAR or configure a reverse proxy to rewrite the path.
+
+## Log file locations
+
+All Tomcat and application logs are written to `/usr/local/tomcat/logs/` inside the container, which is mapped to `./tomcat_log/` on the host via the volume mount in `docker-compose.yml`.
+
+| File | Contents |
+|---|---|
+| `catalina.out` | Combined stdout/stderr for the Tomcat process. Start here when diagnosing startup failures. |
+| `catalina.<date>.log` | Tomcat container lifecycle messages. |
+| `localhost.<date>.log` | Web application startup/shutdown events and unhandled exceptions. |
+| `localhost_access_log.<date>.txt` | HTTP access log (Combined Log Format). |
+
+To tail `catalina.out` in real time:
+
+```bash
+docker compose logs -f scadalts
+# or directly on the host:
+tail -f ./tomcat_log/catalina.out
+```
+
+## Backing up and restoring
+
+<Steps>
+  <Step title="Dump the MySQL database">
+    ```bash
+    docker exec mysql mysqldump -u root -proot scadalts > scadalts_backup.sql
+    ```
+    Run this command regularly and store the dump off-host. The `db_data/` directory can also be backed up directly, but a SQL dump is more portable.
+  </Step>
+  <Step title="Export application configuration (XML)">
+    In the Scada-LTS UI, navigate to **Administration → System settings → Export**. This produces an XML file containing all data sources, data points, users, and event handlers. Keep this alongside your database dump.
+  </Step>
+  <Step title="Restore from dump">
+    ```bash
+    # Start only the database service
+    docker compose up -d database
+
+    # Restore the dump
+    docker exec -i mysql mysql -u root -proot scadalts < scadalts_backup.sql
+
+    # Then start the rest of the stack
+    docker compose up -d
+    ```
+  </Step>
+</Steps>
+
+## Upgrade procedure
+
+<Steps>
+  <Step title="Pull the new image">
+    ```bash
+    docker compose pull scadalts
+    ```
+  </Step>
+  <Step title="Take a full database backup">
+    ```bash
+    docker exec mysql mysqldump -u root -proot scadalts > pre_upgrade_backup.sql
+    ```
+  </Step>
+  <Step title="Recreate the scadalts container">
+    ```bash
+    docker compose up -d --no-deps scadalts
+    ```
+    The `--no-deps` flag restarts only the `scadalts` service without touching the database or MQTT containers.
+  </Step>
+  <Step title="Verify the application started correctly">
+    ```bash
+    docker compose logs -f scadalts
+    ```
+    Check `catalina.out` for any migration errors. Scada-LTS applies database schema migrations automatically on startup.
+  </Step>
+</Steps>
